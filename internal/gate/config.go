@@ -51,6 +51,10 @@ func LoadConfigFromEnv() (Config, error) {
 	if turnstileTheme == "" {
 		return Config{}, fmt.Errorf("parse TURNSTILE_THEME: unsupported theme %q", os.Getenv("TURNSTILE_THEME"))
 	}
+	turnstileAppearance := normalizeTurnstileAppearance(envOrDefault("TURNSTILE_APPEARANCE", defaultTurnstileAppearance))
+	if turnstileAppearance == "" {
+		return Config{}, fmt.Errorf("parse TURNSTILE_APPEARANCE: unsupported appearance %q", os.Getenv("TURNSTILE_APPEARANCE"))
+	}
 	authSessionStore := normalizeAuthSessionStore(envOrDefault("AUTH_SESSION_STORE", defaultAuthSessionStore))
 	if authSessionStore == "" {
 		return Config{}, fmt.Errorf("parse AUTH_SESSION_STORE: unsupported backend %q", os.Getenv("AUTH_SESSION_STORE"))
@@ -112,6 +116,7 @@ func LoadConfigFromEnv() (Config, error) {
 		TurnstileSiteKey:       strings.TrimSpace(os.Getenv("TURNSTILE_SITE_KEY")),
 		TurnstileSecretKey:     strings.TrimSpace(os.Getenv("TURNSTILE_SECRET_KEY")),
 		TurnstileTheme:         turnstileTheme,
+		TurnstileAppearance:    turnstileAppearance,
 		TurnstileAction:        envOrDefault("TURNSTILE_ACTION", defaultTurnstileAction),
 		TurnstileVerifyURL:     envOrDefault("TURNSTILE_VERIFY_URL", defaultTurnstileVerifyURL),
 		TurnstileVerifyTimeout: turnstileVerifyTimeout,

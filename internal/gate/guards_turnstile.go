@@ -65,7 +65,7 @@ func (g *turnstileLoginGuard) Render(w http.ResponseWriter, r *http.Request, lan
       data-theme="%s"
       data-language="%s"
       data-size="flexible"
-      data-appearance="interaction-only"
+      data-appearance="%s"
       data-retry="auto"
       data-refresh-expired="auto"
       data-refresh-timeout="auto"
@@ -82,82 +82,123 @@ func (g *turnstileLoginGuard) Render(w http.ResponseWriter, r *http.Request, lan
 (() => {
   const script = document.currentScript;
   if (!script) return;
-  const form = script.closest("form");
-  if (!form) return;
-  const statusNode = form.querySelector("[data-turnstile-status]");
-  const submitButton = form.querySelector('button[type="submit"]');
-  if (!statusNode || !submitButton) return;
-
-  const guard = window.__authLoginGuards;
   const tokenSelector = 'input[name="%s"]';
   const watchdogMs = %d;
+  let form = null;
+  let statusNode = null;
+  let submitButton = null;
+  let watchdog = 0;
   let settled = false;
+  let initialized = false;
+  const snapshot = {
+    message: "%s",
+    state: "waiting",
+    ready: false,
+  };
 
-  function setStatus(message, state) {
-    statusNode.textContent = message;
-    statusNode.dataset.state = state;
+  function resolveNodes() {
+    if (form && statusNode && submitButton) {
+      return true;
+    }
+    form = script.closest("form");
+    if (!form) return false;
+    statusNode = form.querySelector("[data-turnstile-status]");
+    submitButton = form.querySelector('button[type="submit"]');
+    return Boolean(statusNode && submitButton);
   }
 
-  function setReady(ready) {
+  function guardAPI() {
+    return window.__authLoginGuards;
+  }
+
+  function applySnapshot() {
+    if (!resolveNodes()) {
+      return;
+    }
+    statusNode.textContent = snapshot.message;
+    statusNode.dataset.state = snapshot.state;
+    const guard = guardAPI();
     if (guard && typeof guard.setReady === "function") {
-      guard.setReady(form, "%s", ready);
+      guard.setReady(form, "%s", snapshot.ready);
       return;
     }
-    submitButton.disabled = !ready;
+    submitButton.disabled = !snapshot.ready;
   }
 
-  if (guard && typeof guard.register === "function") {
-    guard.register(form, "%s", false);
-  } else {
-    submitButton.disabled = true;
+  function updateSnapshot(message, state, ready) {
+    snapshot.message = message;
+    snapshot.state = state;
+    snapshot.ready = ready;
+    applySnapshot();
   }
 
-  setStatus("%s", "waiting");
-  const watchdog = window.setTimeout(() => {
-    const tokenInput = form.querySelector(tokenSelector);
-    if (settled || (tokenInput && tokenInput.value)) {
+  function startWatchdog() {
+    window.clearTimeout(watchdog);
+    if (snapshot.ready || !resolveNodes()) {
       return;
     }
-    setStatus("%s", "failed");
-    setReady(false);
-  }, watchdogMs);
+    watchdog = window.setTimeout(() => {
+      const tokenInput = form.querySelector(tokenSelector);
+      if (settled || (tokenInput && tokenInput.value)) {
+        return;
+      }
+      updateSnapshot("%s", "failed", false);
+    }, watchdogMs);
+  }
+
+  function init() {
+    if (!resolveNodes()) {
+      return;
+    }
+    if (!initialized) {
+      initialized = true;
+      const guard = guardAPI();
+      if (guard && typeof guard.register === "function") {
+        guard.register(form, "%s", snapshot.ready);
+      } else {
+        submitButton.disabled = !snapshot.ready;
+      }
+      form.addEventListener("submit", (event) => {
+        const tokenInput = form.querySelector(tokenSelector);
+        if (!tokenInput || !tokenInput.value) {
+          event.preventDefault();
+          updateSnapshot("%s", "waiting", false);
+        }
+      });
+    }
+    applySnapshot();
+    startWatchdog();
+  }
 
   window["%s"] = function() {
     settled = true;
     window.clearTimeout(watchdog);
-    setStatus("%s", "ready");
-    setReady(true);
+    updateSnapshot("%s", "ready", true);
   };
 
   window["%s"] = function() {
     settled = false;
     window.clearTimeout(watchdog);
-    setStatus("%s", "failed");
-    setReady(false);
+    updateSnapshot("%s", "failed", false);
   };
 
   window["%s"] = function() {
     settled = false;
     window.clearTimeout(watchdog);
-    setStatus("%s", "expired");
-    setReady(false);
+    updateSnapshot("%s", "expired", false);
   };
 
   window["%s"] = function() {
     settled = false;
     window.clearTimeout(watchdog);
-    setStatus("%s", "unsupported");
-    setReady(false);
+    updateSnapshot("%s", "unsupported", false);
   };
 
-  form.addEventListener("submit", (event) => {
-    const tokenInput = form.querySelector(tokenSelector);
-    if (!tokenInput || !tokenInput.value) {
-      event.preventDefault();
-      setStatus("%s", "waiting");
-      setReady(false);
-    }
-  });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
 })();
 </script>`,
 		template.HTMLEscapeString(g.translator.Text(lang, "turnstile_status_waiting")),
@@ -166,6 +207,7 @@ func (g *turnstileLoginGuard) Render(w http.ResponseWriter, r *http.Request, lan
 		template.HTMLEscapeString(browserSessionKey),
 		template.HTMLEscapeString(g.theme),
 		template.HTMLEscapeString(turnstileWidgetLanguage(lang)),
+		template.HTMLEscapeString(g.appearance),
 		template.HTMLEscapeString(turnstileResponseField),
 		template.HTMLEscapeString(readyCallback),
 		template.HTMLEscapeString(expiredCallback),
@@ -176,10 +218,11 @@ func (g *turnstileLoginGuard) Render(w http.ResponseWriter, r *http.Request, lan
 		template.HTMLEscapeString(scriptNonce),
 		template.JSEscapeString(turnstileResponseField),
 		turnstileWatchdogMillis,
+		statusWaiting,
 		turnstileGuardID,
+		statusFailed,
 		turnstileGuardID,
 		statusWaiting,
-		statusFailed,
 		readyCallback,
 		statusReady,
 		errorCallback,
@@ -188,7 +231,6 @@ func (g *turnstileLoginGuard) Render(w http.ResponseWriter, r *http.Request, lan
 		statusExpired,
 		unsupportedCallback,
 		statusUnsupported,
-		statusWaiting,
 	))
 }
 

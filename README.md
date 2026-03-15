@@ -88,6 +88,7 @@ ghcr.io/xmzo/0auth:latest
 LOGIN_CHALLENGE_MODE=turnstile
 TURNSTILE_SITE_KEY=your-site-key
 TURNSTILE_SECRET_KEY=your-secret-key
+TURNSTILE_APPEARANCE=always
 ```
 
 如果要和 PoW 叠加：

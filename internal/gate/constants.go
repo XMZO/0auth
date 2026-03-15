@@ -21,6 +21,7 @@ const (
 	defaultPoWDifficulty        = 4
 	defaultPoWTTL               = 5 * time.Minute
 	defaultTurnstileTheme       = "auto"
+	defaultTurnstileAppearance  = "always"
 	defaultTurnstileAction      = "login"
 	defaultTurnstileVerifyURL   = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 	defaultTurnstileVerifyTTL   = 15 * time.Minute

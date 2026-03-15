@@ -64,6 +64,7 @@ func buildLoginGuards(cfg Config, signer *SessionSigner, translator *gatei18n.Tr
 			siteKey:       cfg.TurnstileSiteKey,
 			secretKey:     cfg.TurnstileSecretKey,
 			theme:         cfg.TurnstileTheme,
+			appearance:    cfg.TurnstileAppearance,
 			action:        cfg.TurnstileAction,
 			verifyURL:     cfg.TurnstileVerifyURL,
 			verifyTimeout: cfg.TurnstileVerifyTimeout,

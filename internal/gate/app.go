@@ -42,6 +42,7 @@ func NewApp(cfg Config) (*App, error) {
 	cfg.LoginChallengeMode = normalizeLoginChallengeMode(cfg.LoginChallengeMode)
 	cfg.PoWProgressMode = normalizePoWProgressMode(cfg.PoWProgressMode)
 	cfg.TurnstileTheme = normalizeTurnstileTheme(cfg.TurnstileTheme)
+	cfg.TurnstileAppearance = normalizeTurnstileAppearance(cfg.TurnstileAppearance)
 	cfg.TurnstileAction = strings.TrimSpace(cfg.TurnstileAction)
 	if cfg.LoginChallengeMode == "" {
 		return nil, fmt.Errorf("LOGIN_CHALLENGE_MODE must be one of none, pow, turnstile, or pow+turnstile")
@@ -63,6 +64,9 @@ func NewApp(cfg Config) (*App, error) {
 	}
 	if cfg.TurnstileTheme == "" {
 		return nil, fmt.Errorf("TURNSTILE_THEME must be one of auto, light, or dark")
+	}
+	if cfg.TurnstileAppearance == "" {
+		return nil, fmt.Errorf("TURNSTILE_APPEARANCE must be one of always, interaction-only, or execute")
 	}
 	if cfg.TurnstileAction == "" {
 		cfg.TurnstileAction = defaultTurnstileAction

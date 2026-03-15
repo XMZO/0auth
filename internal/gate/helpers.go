@@ -141,6 +141,21 @@ func normalizeTurnstileTheme(value string) string {
 	}
 }
 
+func normalizeTurnstileAppearance(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return defaultTurnstileAppearance
+	case "always":
+		return "always"
+	case "interaction-only":
+		return "interaction-only"
+	case "execute":
+		return "execute"
+	default:
+		return ""
+	}
+}
+
 func normalizeHostname(value string) string {
 	raw := strings.TrimSpace(value)
 	if raw == "" {

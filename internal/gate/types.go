@@ -34,6 +34,7 @@ type Config struct {
 	TurnstileSiteKey       string
 	TurnstileSecretKey     string
 	TurnstileTheme         string
+	TurnstileAppearance    string
 	TurnstileAction        string
 	TurnstileVerifyURL     string
 	TurnstileVerifyTimeout time.Duration
@@ -162,6 +163,7 @@ type turnstileLoginGuard struct {
 	siteKey       string
 	secretKey     string
 	theme         string
+	appearance    string
 	action        string
 	verifyURL     string
 	verifyTimeout time.Duration
