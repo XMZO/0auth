@@ -29,14 +29,6 @@ services:
     cap_drop:
       - ALL
 
-    # 镜像里已经内置 healthcheck，这里显式写出来更直观
-    healthcheck:
-      test: ["CMD", "/app/auth-proxy", "-healthcheck"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-
     # 避免日志无限增长
     logging:
       driver: json-file
