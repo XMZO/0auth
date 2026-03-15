@@ -29,11 +29,15 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
 	statusFailed := template.JSEscapeString(g.translator.Text(lang, "pow_failed"))
 	statusUnsupported := template.JSEscapeString(g.translator.Text(lang, "pow_unsupported"))
 	noscript := template.HTMLEscapeString(g.translator.Text(lang, "pow_noscript"))
+	progressAttrs := `data-pow-progress`
+	if g.progressMode == "hidden" {
+		progressAttrs += ` hidden aria-hidden="true"`
+	}
 
 	return template.HTML(fmt.Sprintf(`
 <div class="pow-box" data-pow-box>
   <div class="pow-status" data-pow-status>%s</div>
-  <div class="pow-progress" data-pow-progress>
+  <div class="pow-progress" %s>
     <div class="pow-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-pow-progress-track>
       <div class="pow-progress-fill" data-pow-progress-fill></div>
     </div>
@@ -57,9 +61,10 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
     const nonceInput = form.querySelector('input[name="pow_nonce"]');
     const difficultyInput = form.querySelector('input[name="pow_difficulty"]');
     const statusNode = form.querySelector('[data-pow-status]');
+    const progressContainer = form.querySelector('[data-pow-progress]');
     const progressTrack = form.querySelector('[data-pow-progress-track]');
     const progressFill = form.querySelector('[data-pow-progress-fill]');
-    if (!submitButton || !tokenInput || !nonceInput || !difficultyInput || !statusNode || !progressTrack || !progressFill) return;
+    if (!submitButton || !tokenInput || !nonceInput || !difficultyInput || !statusNode || !progressContainer || !progressTrack || !progressFill) return;
 
     const difficulty = Number(difficultyInput.value || "0");
     const zeroPrefix = "0".repeat(Math.max(0, difficulty));
@@ -71,15 +76,30 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
     const minProgressAttemptDelta = 1024;
     let lastProgressUpdateMs = 0;
     let lastProgressAttempts = 0;
-    if (progressMode === "hidden") {
-      const progressContainer = form.querySelector('[data-pow-progress]');
-      if (progressContainer) {
-        progressContainer.hidden = true;
-      }
-    }
     function setStatus(message, state) {
       statusNode.textContent = message;
       statusNode.dataset.state = state;
+    }
+
+    function renderProgress(percent) {
+      const clamped = Math.max(0, Math.min(100, percent));
+      progressFill.style.width = clamped.toFixed(1) + "%%";
+      progressTrack.setAttribute("aria-valuenow", clamped.toFixed(1));
+    }
+
+    function revealSolvedProgress() {
+      if (progressMode !== "hidden") {
+        renderProgress(100);
+        return;
+      }
+
+      progressContainer.hidden = false;
+      progressContainer.removeAttribute("aria-hidden");
+      renderProgress(0);
+      progressFill.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        renderProgress(100);
+      });
     }
 
     setStatus("%s", "waiting");
@@ -119,6 +139,9 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
 
     function updateProgress(attempts, elapsedSeconds, solved) {
       if (progressMode === "hidden") {
+        if (solved) {
+          revealSolvedProgress();
+        }
         return;
       }
       if (!shouldRenderProgress(attempts, elapsedSeconds, solved)) {
@@ -129,8 +152,7 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
       if (!solved) {
         percent = progressMode === "fake" ? fakeProgressPercent(elapsedSeconds) : estimatedProgressPercent(attempts);
       }
-      progressFill.style.width = percent.toFixed(1) + "%%";
-      progressTrack.setAttribute("aria-valuenow", percent.toFixed(1));
+      renderProgress(percent);
     }
 
     async function sha256Hex(text) {
@@ -183,6 +205,7 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
 })();
 </script>`,
 		template.HTMLEscapeString(g.translator.Text(lang, "pow_status_waiting")),
+		progressAttrs,
 		template.HTMLEscapeString(challenge.id),
 		template.HTMLEscapeString(challenge.token),
 		difficulty,

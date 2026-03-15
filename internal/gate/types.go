@@ -46,6 +46,7 @@ type App struct {
 	cfg           Config
 	proxy         *httputil.ReverseProxy
 	auth          AuthStrategy
+	loginFlow     *loginFlowManager
 	translator    *gatei18n.Translator
 	langDetectors []LanguageDetector
 	loginGuards   []LoginGuard
@@ -97,6 +98,20 @@ type SinglePasswordAuth struct {
 type SessionSigner struct {
 	secret []byte
 	now    func() time.Time
+}
+
+type loginFlowManager struct {
+	cookieName    string
+	cookiePath    string
+	ttl           time.Duration
+	signer        *SessionSigner
+	secureDecider func(*http.Request) bool
+}
+
+type loginFlowState struct {
+	Next      string
+	Lang      string
+	ExpiresAt time.Time
 }
 
 type queryLangDetector struct{}
@@ -186,22 +201,24 @@ type localizedUserError struct {
 	status int
 }
 
+type LoginLanguageOption struct {
+	Code   string
+	Label  string
+	Active bool
+}
+
 type LoginPageData struct {
-	Lang          string
-	Title         string
-	Tagline       string
-	ScriptNonce   string
-	PasswordLabel string
-	PasswordHint  string
-	SubmitLabel   string
-	Error         string
-	Message       string
-	Next          string
-	FormAction    string
-	ZHToggleURL   string
-	ENToggleURL   string
-	ZHToggleLabel string
-	ENToggleLabel string
-	LanguageLabel string
-	ChallengeHTML []template.HTML
+	Lang            string
+	Title           string
+	Tagline         string
+	PasswordLabel   string
+	PasswordHint    string
+	SubmitLabel     string
+	Error           string
+	Message         string
+	Next            string
+	FormAction      string
+	LanguageLabel   string
+	LanguageOptions []LoginLanguageOption
+	ChallengeHTML   []template.HTML
 }

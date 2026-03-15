@@ -84,6 +84,7 @@ func NewApp(cfg Config) (*App, error) {
 		cfg:           cfg,
 		proxy:         proxy,
 		auth:          auth,
+		loginFlow:     newLoginFlowManager(cfg, signer),
 		translator:    translator,
 		langDetectors: buildLanguageDetectors(cfg),
 		loginGuards:   buildLoginGuards(cfg, signer, translator),
@@ -141,35 +142,83 @@ func (a *App) handleHealth(w http.ResponseWriter) {
 }
 
 func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
-	lang := a.detectLanguage(r)
-
-	if a.auth.Authenticate(w, r) && r.Method == http.MethodGet {
-		http.Redirect(w, r, sanitizeNext(r.URL.Query().Get("next")), http.StatusSeeOther)
-		return
-	}
+	detectedLang := a.detectLanguage(r)
 
 	switch r.Method {
 	case http.MethodGet:
-		if !hasValidChallengeFlow(r) {
-			a.redirectToLogin(w, r, sanitizeNext(r.URL.Query().Get("next")), lang, http.StatusSeeOther)
+		flowState, hasFlow := a.loginFlow.Resolve(r, detectedLang)
+		if queryState, hasQuery := loginFlowStateFromQuery(r, flowState, detectedLang); hasQuery {
+			if a.auth.Authenticate(w, r) {
+				a.loginFlow.Clear(w, r)
+				http.Redirect(w, r, queryState.Next, http.StatusSeeOther)
+				return
+			}
+			if lang := normalizeLang(r.URL.Query().Get("lang")); lang != "" {
+				a.persistLanguageCookie(w, r, lang)
+			}
+			if _, err := a.loginFlow.Issue(w, r, queryState, queryState.Lang); err != nil {
+				log.Printf("issue login flow from query: %v", err)
+				a.renderLoginPage(w, r, queryState, http.StatusUnauthorized, "", "")
+				return
+			}
+			http.Redirect(w, r, loginPath, http.StatusSeeOther)
 			return
 		}
-		a.renderLoginPage(w, r, lang, http.StatusUnauthorized, "", "")
+
+		if a.auth.Authenticate(w, r) {
+			a.loginFlow.Clear(w, r)
+			if hasFlow {
+				http.Redirect(w, r, flowState.Next, http.StatusSeeOther)
+				return
+			}
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
+		if hasFlow {
+			a.renderLoginPageWithState(w, r, flowState, http.StatusUnauthorized, "", "")
+			return
+		}
+
+		a.renderLoginPageWithState(w, r, loginFlowState{
+			Next: "/",
+			Lang: detectedLang,
+		}, http.StatusUnauthorized, "", "")
 		return
 	case http.MethodPost:
 		if err := r.ParseForm(); err != nil {
-			a.renderLoginPage(w, r, lang, http.StatusBadRequest, a.translator.Text(lang, "bad_request"), "")
+			a.renderLoginPageWithState(w, r, loginFlowState{
+				Next: "/",
+				Lang: detectedLang,
+			}, http.StatusBadRequest, a.translator.Text(detectedLang, "bad_request"), "")
 			return
 		}
 
-		a.persistLanguageCookie(w, r, normalizeLang(r.FormValue("lang")))
-		lang = a.detectLanguage(r)
+		state, hasFlow := a.loginFlow.Resolve(r, detectedLang)
+		if !hasFlow {
+			state = loginFlowFallbackStateFromForm(r, detectedLang)
+		}
+		if lang := normalizeLang(r.FormValue("lang")); lang != "" {
+			state.Lang = lang
+		}
+		state = normalizeLoginFlowState(state, detectedLang)
+		a.persistLanguageCookie(w, r, state.Lang)
+
+		if strings.EqualFold(strings.TrimSpace(r.FormValue("intent")), "switch_lang") {
+			if _, err := a.loginFlow.Issue(w, r, state, state.Lang); err != nil {
+				log.Printf("issue login flow for language switch: %v", err)
+				a.renderLoginPage(w, r, state, http.StatusUnauthorized, "", "")
+				return
+			}
+			http.Redirect(w, r, loginPath, http.StatusSeeOther)
+			return
+		}
 
 		for _, guard := range a.loginGuards {
-			if err := guard.Validate(r, lang); err != nil {
+			if err := guard.Validate(r, state.Lang); err != nil {
 				log.Printf("login blocked by guard %s: %v", guard.ID(), err)
-				status, message := a.userFacingError(lang, err)
-				a.renderLoginPage(w, r, lang, status, message, "")
+				status, message := a.userFacingError(state.Lang, err)
+				a.renderLoginPageWithState(w, r, state, status, message, "")
 				return
 			}
 		}
@@ -177,22 +226,23 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if err := a.auth.Login(w, r); err != nil {
 			switch {
 			case errors.Is(err, errInvalidCredentials):
-				status, message := http.StatusUnauthorized, a.translator.Text(lang, "invalid_password")
-				if hookErr := a.notifyLoginFailure(r, lang); hookErr != nil {
-					status, message = a.userFacingError(lang, hookErr)
+				status, message := http.StatusUnauthorized, a.translator.Text(state.Lang, "invalid_password")
+				if hookErr := a.notifyLoginFailure(r, state.Lang); hookErr != nil {
+					status, message = a.userFacingError(state.Lang, hookErr)
 				}
-				a.renderLoginPage(w, r, lang, status, message, "")
+				a.renderLoginPageWithState(w, r, state, status, message, "")
 			case errors.Is(err, errLoginBlocked):
-				a.renderLoginPage(w, r, lang, http.StatusForbidden, a.translator.Text(lang, "login_blocked"), "")
+				a.renderLoginPageWithState(w, r, state, http.StatusForbidden, a.translator.Text(state.Lang, "login_blocked"), "")
 			default:
 				log.Printf("login error: %v", err)
-				a.renderLoginPage(w, r, lang, http.StatusInternalServerError, a.translator.Text(lang, "server_error"), "")
+				a.renderLoginPageWithState(w, r, state, http.StatusInternalServerError, a.translator.Text(state.Lang, "server_error"), "")
 			}
 			return
 		}
 
 		a.notifyLoginSuccess(r)
-		http.Redirect(w, r, sanitizeNext(r.FormValue("next")), http.StatusSeeOther)
+		a.loginFlow.Clear(w, r)
+		http.Redirect(w, r, state.Next, http.StatusSeeOther)
 		return
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -203,10 +253,30 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	lang := a.detectLanguage(r)
 	a.auth.Logout(w, r)
-	a.renderLoginPage(w, r, lang, http.StatusUnauthorized, "", a.translator.Text(lang, "logged_out"))
+	a.loginFlow.Clear(w, r)
+	a.renderLoginPageWithState(w, r, loginFlowState{
+		Next: "/",
+		Lang: lang,
+	}, http.StatusUnauthorized, "", a.translator.Text(lang, "logged_out"))
 }
 
-func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, lang string, status int, errMessage string, message string) {
+func (a *App) renderLoginPageWithState(w http.ResponseWriter, r *http.Request, state loginFlowState, status int, errMessage string, message string) {
+	fallbackLang := state.Lang
+	if fallbackLang == "" {
+		fallbackLang = a.detectLanguage(r)
+	}
+	state = normalizeLoginFlowState(state, fallbackLang)
+	if issuedState, err := a.loginFlow.Issue(w, r, state, fallbackLang); err != nil {
+		log.Printf("issue login flow before render: %v", err)
+	} else {
+		state = issuedState
+	}
+	a.renderLoginPage(w, r, state, status, errMessage, message)
+}
+
+func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, state loginFlowState, status int, errMessage string, message string) {
+	state = normalizeLoginFlowState(state, a.detectLanguage(r))
+	lang := state.Lang
 	scriptNonce, err := issueNonce(16)
 	if err != nil {
 		log.Printf("generate CSP nonce: %v", err)
@@ -219,17 +289,6 @@ func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, lang strin
 	w.Header().Set("Surrogate-Control", "no-store")
 	w.Header().Set("Vary", "Accept-Language, Cookie")
 	w.Header().Set("Content-Security-Policy", gateui.LoginPageCSP(scriptNonce))
-	next := requestedPath(r)
-	if r.Method == http.MethodPost {
-		if value := sanitizeNext(r.FormValue("next")); value != "/" {
-			next = value
-		}
-	}
-	if r.URL.Path == loginPath {
-		if value := sanitizeNext(r.URL.Query().Get("next")); value != "/" {
-			next = value
-		}
-	}
 
 	challengeHTML := make([]template.HTML, 0, len(a.loginGuards))
 	for _, guard := range a.loginGuards {
@@ -240,19 +299,18 @@ func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, lang strin
 		Lang:          lang,
 		Title:         a.translator.Text(lang, "login_title"),
 		Tagline:       a.translator.Text(lang, "login_tagline"),
-		ScriptNonce:   scriptNonce,
 		PasswordLabel: a.translator.Text(lang, "password_label"),
 		PasswordHint:  a.translator.Text(lang, "password_hint"),
 		SubmitLabel:   a.translator.Text(lang, "submit_label"),
 		Error:         errMessage,
 		Message:       message,
-		Next:          next,
-		FormAction:    authFlowURL(next, lang),
-		ZHToggleURL:   authFlowURL(next, "zh"),
-		ENToggleURL:   authFlowURL(next, "en"),
-		ZHToggleLabel: a.translator.Text(lang, "toggle_zh"),
-		ENToggleLabel: a.translator.Text(lang, "toggle_en"),
+		Next:          state.Next,
+		FormAction:    loginPath,
 		LanguageLabel: a.translator.Text(lang, "language_label"),
+		LanguageOptions: []LoginLanguageOption{
+			{Code: "zh", Label: a.translator.Text(lang, "toggle_zh"), Active: lang == "zh"},
+			{Code: "en", Label: a.translator.Text(lang, "toggle_en"), Active: lang == "en"},
+		},
 		ChallengeHTML: challengeHTML,
 	}
 
@@ -293,7 +351,14 @@ func (a *App) userFacingError(lang string, err error) (int, string) {
 }
 
 func (a *App) redirectToLogin(w http.ResponseWriter, r *http.Request, next string, lang string, status int) {
-	http.Redirect(w, r, authFlowURL(next, lang), status)
+	state := loginFlowState{
+		Next: next,
+		Lang: lang,
+	}
+	if _, err := a.loginFlow.Issue(w, r, state, lang); err != nil {
+		log.Printf("issue login flow during redirect: %v", err)
+	}
+	http.Redirect(w, r, loginPath, status)
 }
 
 func (a *App) detectLanguage(r *http.Request) string {
@@ -310,6 +375,11 @@ func (a *App) persistLanguageCookie(w http.ResponseWriter, r *http.Request, cand
 		return
 	}
 
+	now := time.Now()
+	if a.cfg.Now != nil {
+		now = a.cfg.Now()
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     a.cfg.LangCookieName,
 		Value:    candidate,
@@ -318,6 +388,6 @@ func (a *App) persistLanguageCookie(w http.ResponseWriter, r *http.Request, cand
 		Secure:   shouldUseSecureCookie(a.cfg, r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(a.cfg.CookieTTL.Seconds()),
-		Expires:  time.Now().Add(a.cfg.CookieTTL),
+		Expires:  now.Add(a.cfg.CookieTTL),
 	})
 }

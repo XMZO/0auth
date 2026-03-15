@@ -15,11 +15,13 @@ const (
 	defaultAuthRotationInterval = 5 * time.Minute
 	defaultAuthRotationGrace    = 30 * time.Second
 	defaultCookieTTL            = 30 * 24 * time.Hour
+	defaultLoginFlowTTL         = 24 * time.Hour
 	defaultPoWDifficulty        = 4
 	defaultPoWTTL               = 5 * time.Minute
 	defaultMaxFailures          = 5
 	defaultBanDuration          = 15 * time.Minute
 	DefaultPoWProgressMode      = "hidden"
+	maxNextPathLength           = 2048
 
 	AuthBasePath = "/_auth"
 	LoginPath    = AuthBasePath + "/login"

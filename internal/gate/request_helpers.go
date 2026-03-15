@@ -1,10 +1,8 @@
 package gate
 
 import (
-	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -46,6 +44,9 @@ func sanitizeNext(next string) string {
 	if next == "" {
 		return "/"
 	}
+	if len(next) > maxNextPathLength {
+		return "/"
+	}
 	if strings.HasPrefix(next, "//") {
 		return "/"
 	}
@@ -56,27 +57,4 @@ func sanitizeNext(next string) string {
 		return "/"
 	}
 	return next
-}
-
-func authFlowURL(next string, lang string) string {
-	values := url.Values{}
-	values.Set("next", sanitizeNext(next))
-	if normalizedLang := normalizeLang(lang); normalizedLang != "" {
-		values.Set("lang", normalizedLang)
-	}
-	flow, err := issueNonce(12)
-	if err != nil {
-		log.Printf("generate auth flow token: %v", err)
-	} else {
-		values.Set("flow", flow)
-	}
-	return loginPath + "?" + values.Encode()
-}
-
-func hasValidChallengeFlow(r *http.Request) bool {
-	if r == nil || r.URL == nil {
-		return false
-	}
-	flow := strings.TrimSpace(r.URL.Query().Get("flow"))
-	return len(flow) >= 8 && len(flow) <= 128
 }

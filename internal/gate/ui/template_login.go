@@ -176,19 +176,33 @@ const loginPageHTML = `<!doctype html>
       align-items: center;
     }
 
-    .lang-link {
+    .lang-form {
+      display: block;
+      margin: 0;
+    }
+
+    .lang-button {
+      appearance: none;
+      min-width: 0;
       padding: 0;
+      border: 0;
+      background: transparent;
       color: var(--muted);
       text-decoration: none;
       border-bottom: 1px solid transparent;
+      font-family: var(--font-body);
       font-size: 0.92rem;
       line-height: 1.2;
+      font-weight: 400;
+      letter-spacing: 0;
+      cursor: pointer;
     }
 
-    .lang-link:hover,
-    .lang-link.active {
+    .lang-button:hover,
+    .lang-button.active {
       color: var(--ink);
       border-bottom-color: currentColor;
+      background: transparent;
     }
 
     .stack {
@@ -327,7 +341,7 @@ const loginPageHTML = `<!doctype html>
       border-top: 1px solid var(--rule);
     }
 
-    button {
+    button:not(.lang-button) {
       appearance: none;
       min-width: 8.8rem;
       padding: 0.7rem 1rem;
@@ -343,12 +357,12 @@ const loginPageHTML = `<!doctype html>
       transition: background 0.14s ease, border-color 0.14s ease;
     }
 
-    button:disabled {
+    button:not(.lang-button):disabled {
       cursor: wait;
       opacity: 0.72;
     }
 
-    button:hover {
+    button:not(.lang-button):hover {
       background: var(--button-bg-hover);
       border-color: var(--rule-strong);
     }
@@ -373,7 +387,7 @@ const loginPageHTML = `<!doctype html>
         display: block;
       }
 
-      button {
+      button:not(.lang-button) {
         width: 100%;
       }
     }
@@ -391,8 +405,14 @@ const loginPageHTML = `<!doctype html>
       <div class="lang-switch">
         <span class="lang-label">{{.LanguageLabel}}</span>
         <div class="lang-links">
-          <a class="lang-link{{if eq .Lang "zh"}} active{{end}}" href="{{.ZHToggleURL}}"{{if eq .Lang "zh"}} aria-current="page"{{end}}>{{.ZHToggleLabel}}</a>
-          <a class="lang-link{{if eq .Lang "en"}} active{{end}}" href="{{.ENToggleURL}}"{{if eq .Lang "en"}} aria-current="page"{{end}}>{{.ENToggleLabel}}</a>
+          {{range .LanguageOptions}}
+          <form class="lang-form" method="post" action="{{$.FormAction}}">
+            <input type="hidden" name="intent" value="switch_lang">
+            <input type="hidden" name="lang" value="{{.Code}}">
+            <input type="hidden" name="next" value="{{$.Next}}">
+            <button class="lang-button{{if .Active}} active{{end}}" type="submit"{{if .Active}} aria-current="true"{{end}}>{{.Label}}</button>
+          </form>
+          {{end}}
         </div>
       </div>
     </header>
@@ -422,14 +442,5 @@ const loginPageHTML = `<!doctype html>
       </div>
     </form>
   </main>
-  <script nonce="{{.ScriptNonce}}">
-    (() => {
-      if (!window.history || typeof window.history.replaceState !== "function") return;
-      const search = window.location.search || "";
-      if (search.indexOf("flow=") === -1 && search.indexOf("next=") === -1 && search.indexOf("lang=") === -1) return;
-      const cleanURL = window.location.pathname + (window.location.hash || "");
-      window.history.replaceState(null, document.title, cleanURL);
-    })();
-  </script>
 </body>
 </html>`
