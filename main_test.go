@@ -113,6 +113,9 @@ func TestLoginAndProxyFlow(t *testing.T) {
 			t.Fatalf("unauthorized body leaked user-facing implementation detail %q: %s", phrase, string(unauthBody))
 		}
 	}
+	if !strings.Contains(string(unauthBody), "window.history.replaceState") {
+		t.Fatalf("unauthorized body missing clean URL script: %s", string(unauthBody))
+	}
 
 	powID, powToken, powDifficulty := extractPoWFields(t, string(unauthBody))
 	powNonce := solvePoWNonce(powToken, powDifficulty)

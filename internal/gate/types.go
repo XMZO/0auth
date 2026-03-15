@@ -190,6 +190,7 @@ type LoginPageData struct {
 	Lang          string
 	Title         string
 	Tagline       string
+	ScriptNonce   string
 	PasswordLabel string
 	PasswordHint  string
 	SubmitLabel   string

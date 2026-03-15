@@ -422,5 +422,14 @@ const loginPageHTML = `<!doctype html>
       </div>
     </form>
   </main>
+  <script nonce="{{.ScriptNonce}}">
+    (() => {
+      if (!window.history || typeof window.history.replaceState !== "function") return;
+      const search = window.location.search || "";
+      if (search.indexOf("flow=") === -1 && search.indexOf("next=") === -1 && search.indexOf("lang=") === -1) return;
+      const cleanURL = window.location.pathname + (window.location.hash || "");
+      window.history.replaceState(null, document.title, cleanURL);
+    })();
+  </script>
 </body>
 </html>`

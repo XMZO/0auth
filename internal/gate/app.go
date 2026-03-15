@@ -240,6 +240,7 @@ func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, lang strin
 		Lang:          lang,
 		Title:         a.translator.Text(lang, "login_title"),
 		Tagline:       a.translator.Text(lang, "login_tagline"),
+		ScriptNonce:   scriptNonce,
 		PasswordLabel: a.translator.Text(lang, "password_label"),
 		PasswordHint:  a.translator.Text(lang, "password_hint"),
 		SubmitLabel:   a.translator.Text(lang, "submit_label"),
