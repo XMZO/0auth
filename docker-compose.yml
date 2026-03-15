@@ -1,0 +1,48 @@
+name: 0auth
+
+services:
+  auth-proxy:
+    container_name: 0auth
+    image: ghcr.io/xmzo/0auth:latest
+    pull_policy: always
+
+    # Debian 上反代宿主机本地服务时最直接，
+    # TARGET_URL 可直接写成 http://127.0.0.1:端口
+    network_mode: host
+
+    # 所有运行参数统一放在 .env 中
+    env_file:
+      - .env
+
+    # file 会话存储默认写到这里，重启容器后仍可保留登录态
+    volumes:
+      - 0auth-data:/var/lib/0auth
+
+    # 根文件系统保持只读，只有会话卷和 /tmp 可写
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+
+    # 尽量收紧默认容器权限
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    # 镜像里已经内置 healthcheck，这里显式写出来更直观
+    healthcheck:
+      test: ["/app/auth-proxy", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    # 避免日志无限增长
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  0auth-data:
