@@ -79,8 +79,10 @@ func normalizeSecureMode(value string) string {
 
 func normalizePoWProgressMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", defaultPoWProgressMode:
+	case "":
 		return defaultPoWProgressMode
+	case "estimated":
+		return "estimated"
 	case "fake":
 		return "fake"
 	case "hidden":

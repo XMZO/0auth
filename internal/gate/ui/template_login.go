@@ -69,25 +69,14 @@ const loginPageHTML = `<!doctype html>
     }
 
     .hero {
-      padding: 28px 28px 18px;
+      padding: 28px 28px 22px;
       background:
         linear-gradient(135deg, rgba(21, 101, 192, 0.96), rgba(31, 138, 112, 0.88));
       color: #fff;
     }
 
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.18);
-      font-size: 13px;
-      letter-spacing: 0.02em;
-    }
-
     h1 {
-      margin: 18px 0 10px;
+      margin: 0;
       font-size: 30px;
       line-height: 1.15;
     }
@@ -169,23 +158,11 @@ const loginPageHTML = `<!doctype html>
 
     .pow-box {
       display: grid;
-      gap: 8px;
+      gap: 10px;
       padding: 14px 16px;
       border-radius: 16px;
       border: 1px solid rgba(21, 101, 192, 0.14);
       background: rgba(21, 101, 192, 0.05);
-    }
-
-    .pow-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--text);
-    }
-
-    .pow-description {
-      font-size: 13px;
-      line-height: 1.5;
-      color: var(--muted);
     }
 
     .pow-status {
@@ -215,23 +192,6 @@ const loginPageHTML = `<!doctype html>
       border-radius: inherit;
       background: linear-gradient(90deg, rgba(21, 101, 192, 0.95), rgba(31, 138, 112, 0.92));
       transition: width 0.18s ease;
-    }
-
-    .pow-progress-meta {
-      display: grid;
-      gap: 6px;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .pow-progress-percent {
-      color: var(--accent);
-      font-weight: 700;
-    }
-
-    .pow-progress-stat {
-      white-space: nowrap;
     }
 
     button {
@@ -279,30 +239,21 @@ const loginPageHTML = `<!doctype html>
       border: 1px solid rgba(6, 118, 71, 0.14);
     }
 
-    .meta {
-      display: grid;
-      gap: 10px;
-      margin-top: 18px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.6;
-    }
-
     @media (max-width: 540px) {
       body { padding: 16px; }
       .hero, .content { padding-left: 20px; padding-right: 20px; }
       h1 { font-size: 26px; }
       .lang-switch { align-items: flex-start; }
-      .pow-progress-meta { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <main class="card">
     <section class="hero">
-      <div class="badge">Reverse Proxy Auth</div>
       <h1>{{.Title}}</h1>
+      {{if .Tagline}}
       <p class="subtitle">{{.Tagline}}</p>
+      {{end}}
     </section>
     <section class="content">
       <div class="lang-switch">
@@ -333,11 +284,6 @@ const loginPageHTML = `<!doctype html>
         {{end}}
         <button type="submit">{{.SubmitLabel}}</button>
       </form>
-
-      <div class="meta">
-        <div>{{.Footer}}</div>
-        <div>{{.Tip}}</div>
-      </div>
     </section>
   </main>
 </body>

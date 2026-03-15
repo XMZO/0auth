@@ -19,7 +19,7 @@ const (
 	defaultPoWTTL               = 5 * time.Minute
 	defaultMaxFailures          = 5
 	defaultBanDuration          = 15 * time.Minute
-	DefaultPoWProgressMode      = "estimated"
+	DefaultPoWProgressMode      = "hidden"
 
 	AuthBasePath = "/_auth"
 	LoginPath    = AuthBasePath + "/login"

@@ -195,8 +195,6 @@ type LoginPageData struct {
 	SubmitLabel   string
 	Error         string
 	Message       string
-	Footer        string
-	Tip           string
 	Next          string
 	FormAction    string
 	ZHToggleURL   string

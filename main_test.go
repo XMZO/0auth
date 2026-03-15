@@ -96,8 +96,22 @@ func TestLoginAndProxyFlow(t *testing.T) {
 	if surrogate := unauthResp.Header.Get("Surrogate-Control"); !strings.Contains(strings.ToLower(surrogate), "no-store") {
 		t.Fatalf("challenge page Surrogate-Control = %q, want no-store", surrogate)
 	}
-	if !strings.Contains(string(unauthBody), "Protected Local Site Gateway") {
+	if !strings.Contains(string(unauthBody), "Continue") {
 		t.Fatalf("unauthorized body did not render login page: %s", string(unauthBody))
+	}
+	hiddenPhrases := []string{
+		"Before sign-in, the browser completes a small SHA-256 proof-of-work task.",
+		"A persistent cookie is issued after login. Its lifetime is configurable, and only the cookie is checked. No IP binding is used.",
+		"The module chain covers URL parameters, language cookie, IP rules, Accept-Language, PoW verification, and failure lockout.",
+		"Browser PoW Verification",
+		"Current difficulty:",
+		"Hash rate:",
+		"Attempts:",
+	}
+	for _, phrase := range hiddenPhrases {
+		if strings.Contains(string(unauthBody), phrase) {
+			t.Fatalf("unauthorized body leaked user-facing implementation detail %q: %s", phrase, string(unauthBody))
+		}
 	}
 
 	powID, powToken, powDifficulty := extractPoWFields(t, string(unauthBody))
@@ -765,6 +779,9 @@ func TestPoWProgressModeRender(t *testing.T) {
 				t.Fatalf("body missing minProgressAttemptDelta throttle marker")
 			}
 		}
+		if !strings.Contains(string(body), `document.addEventListener("DOMContentLoaded", init, { once: true });`) {
+			t.Fatalf("body missing deferred PoW init marker")
+		}
 	}
 
 	assertMode("estimated")
@@ -1080,7 +1097,7 @@ func TestPoWChallengeIsSingleUse(t *testing.T) {
 	if replayResp.StatusCode != http.StatusForbidden {
 		t.Fatalf("replayed challenge status = %d, want %d", replayResp.StatusCode, http.StatusForbidden)
 	}
-	if !strings.Contains(string(replayBody), "PoW challenge expired") {
+	if !strings.Contains(string(replayBody), "The security check expired. Please refresh the page and try again.") {
 		t.Fatalf("replayed challenge body missing expiration: %s", replayBody)
 	}
 }
@@ -1154,7 +1171,7 @@ func TestPoWChallengeRequiresBrowserSession(t *testing.T) {
 	if forgedResp.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-client replay status = %d, want %d", forgedResp.StatusCode, http.StatusForbidden)
 	}
-	if !strings.Contains(string(forgedBody), "Missing PoW result") {
+	if !strings.Contains(string(forgedBody), "The security check did not finish. Please refresh the page and try again.") {
 		t.Fatalf("cross-client replay body missing guard error: %s", forgedBody)
 	}
 

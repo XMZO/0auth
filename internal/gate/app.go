@@ -245,8 +245,6 @@ func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, lang strin
 		SubmitLabel:   a.translator.Text(lang, "submit_label"),
 		Error:         errMessage,
 		Message:       message,
-		Footer:        a.translator.Text(lang, "footer"),
-		Tip:           a.translator.Text(lang, "tip"),
 		Next:          next,
 		FormAction:    authFlowURL(next, lang),
 		ZHToggleURL:   authFlowURL(next, "zh"),
