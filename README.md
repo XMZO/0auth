@@ -4,7 +4,7 @@
 
 - 未登录时返回内置登录页
 - 支持中英双语
-- 支持 PoW
+- 支持 `none` / `pow` / `turnstile` / `pow+turnstile`
 - 支持失败次数封禁
 - 支持有状态会话与会话轮换
 - 可用 `docker compose` 直接部署
@@ -20,6 +20,8 @@ TARGET_URL=http://127.0.0.1:5003
 
 AUTH_PASSWORD=change-me
 SESSION_SECRET=replace-with-a-long-random-secret
+
+LOGIN_CHALLENGE_MODE=pow
 ```
 
 3. 启动：
@@ -79,6 +81,20 @@ ghcr.io/xmzo/0auth:latest
 ## 配置
 
 常用配置都在 `.env.example`。
+
+如果要启用 Turnstile，至少再补这几项：
+
+```env
+LOGIN_CHALLENGE_MODE=turnstile
+TURNSTILE_SITE_KEY=your-site-key
+TURNSTILE_SECRET_KEY=your-secret-key
+```
+
+如果要和 PoW 叠加：
+
+```env
+LOGIN_CHALLENGE_MODE=pow+turnstile
+```
 
 ## file 模式路径
 

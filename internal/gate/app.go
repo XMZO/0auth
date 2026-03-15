@@ -30,10 +30,22 @@ func NewApp(cfg Config) (*App, error) {
 	if cfg.PoWChallengeTTL <= 0 {
 		cfg.PoWChallengeTTL = defaultPoWTTL
 	}
+	if cfg.TurnstileVerifyTimeout <= 0 {
+		cfg.TurnstileVerifyTimeout = defaultTurnstileTimeout
+	}
+	if cfg.TurnstileSessionTTL <= 0 {
+		cfg.TurnstileSessionTTL = defaultTurnstileVerifyTTL
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	cfg.LoginChallengeMode = normalizeLoginChallengeMode(cfg.LoginChallengeMode)
 	cfg.PoWProgressMode = normalizePoWProgressMode(cfg.PoWProgressMode)
+	cfg.TurnstileTheme = normalizeTurnstileTheme(cfg.TurnstileTheme)
+	cfg.TurnstileAction = strings.TrimSpace(cfg.TurnstileAction)
+	if cfg.LoginChallengeMode == "" {
+		return nil, fmt.Errorf("LOGIN_CHALLENGE_MODE must be one of none, pow, turnstile, or pow+turnstile")
+	}
 	if cfg.PoWDifficulty < 0 || cfg.PoWDifficulty > 64 {
 		return nil, fmt.Errorf("POW_DIFFICULTY must be between 0 and 64")
 	}
@@ -48,6 +60,26 @@ func NewApp(cfg Config) (*App, error) {
 	}
 	if cfg.PoWProgressMode == "" {
 		return nil, fmt.Errorf("POW_PROGRESS_MODE must be one of estimated, fake, or hidden")
+	}
+	if cfg.TurnstileTheme == "" {
+		return nil, fmt.Errorf("TURNSTILE_THEME must be one of auto, light, or dark")
+	}
+	if cfg.TurnstileAction == "" {
+		cfg.TurnstileAction = defaultTurnstileAction
+	}
+	if !isTurnstileTokenLabel(cfg.TurnstileAction, 32) {
+		return nil, fmt.Errorf("TURNSTILE_ACTION must be 1-32 characters using only letters, numbers, hyphens, or underscores")
+	}
+	if challengeModeIncludesTurnstile(cfg.LoginChallengeMode) {
+		if strings.TrimSpace(cfg.TurnstileSiteKey) == "" {
+			return nil, fmt.Errorf("TURNSTILE_SITE_KEY is required when LOGIN_CHALLENGE_MODE enables turnstile")
+		}
+		if strings.TrimSpace(cfg.TurnstileSecretKey) == "" {
+			return nil, fmt.Errorf("TURNSTILE_SECRET_KEY is required when LOGIN_CHALLENGE_MODE enables turnstile")
+		}
+		if _, err := url.Parse(cfg.TurnstileVerifyURL); err != nil {
+			return nil, fmt.Errorf("parse TURNSTILE_VERIFY_URL: %w", err)
+		}
 	}
 
 	target, err := url.Parse(cfg.TargetURL)
@@ -288,12 +320,16 @@ func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, state logi
 	w.Header().Set("Expires", "0")
 	w.Header().Set("Surrogate-Control", "no-store")
 	w.Header().Set("Vary", "Accept-Language, Cookie")
-	w.Header().Set("Content-Security-Policy", gateui.LoginPageCSP(scriptNonce))
 
 	challengeHTML := make([]template.HTML, 0, len(a.loginGuards))
+	usesTurnstile := false
 	for _, guard := range a.loginGuards {
+		if guard.ID() == "turnstile-login-guard" {
+			usesTurnstile = true
+		}
 		challengeHTML = append(challengeHTML, guard.Render(w, r, lang, scriptNonce))
 	}
+	w.Header().Set("Content-Security-Policy", gateui.LoginPageCSP(scriptNonce, usesTurnstile))
 
 	data := LoginPageData{
 		Lang:          lang,
@@ -312,6 +348,8 @@ func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, state logi
 			{Code: "en", Label: a.translator.Text(lang, "toggle_en"), Active: lang == "en"},
 		},
 		ChallengeHTML: challengeHTML,
+		ScriptNonce:   scriptNonce,
+		UsesTurnstile: usesTurnstile,
 	}
 
 	w.WriteHeader(status)

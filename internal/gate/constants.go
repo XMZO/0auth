@@ -17,8 +17,14 @@ const (
 	defaultAuthRotationGrace    = 30 * time.Second
 	defaultCookieTTL            = 30 * 24 * time.Hour
 	defaultLoginFlowTTL         = 24 * time.Hour
+	defaultLoginChallengeMode   = "pow"
 	defaultPoWDifficulty        = 4
 	defaultPoWTTL               = 5 * time.Minute
+	defaultTurnstileTheme       = "auto"
+	defaultTurnstileAction      = "login"
+	defaultTurnstileVerifyURL   = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+	defaultTurnstileVerifyTTL   = 15 * time.Minute
+	defaultTurnstileTimeout     = 5 * time.Second
 	defaultMaxFailures          = 5
 	defaultBanDuration          = 15 * time.Minute
 	DefaultPoWProgressMode      = "hidden"

@@ -12,34 +12,43 @@ import (
 )
 
 type Config struct {
-	ListenAddr            string
-	TargetURL             string
-	AuthPassword          string
-	SessionSecret         string
-	AuthSessionStore      string
-	AuthSessionFile       string
-	AuthSessionRotation   bool
-	AuthRotationInterval  time.Duration
-	AuthRotationGrace     time.Duration
-	CookieTTL             time.Duration
-	PoWDifficulty         int
-	PoWAutoDifficulty     bool
-	PoWAutoRules          []string
-	PoWMinDifficulty      int
-	PoWMaxDifficulty      int
-	PoWSuspiciousUATokens []string
-	PoWProgressMode       string
-	PoWChallengeTTL       time.Duration
-	MaxLoginFailures      int
-	LoginBanDuration      time.Duration
-	DefaultLang           string
-	AuthCookieName        string
-	LangCookieName        string
-	TrustProxyHeaders     bool
-	CookieSecureMode      string
-	DisabledModules       map[string]struct{}
-	IPLangRules           []ipLangRule
-	Now                   func() time.Time
+	ListenAddr             string
+	TargetURL              string
+	AuthPassword           string
+	SessionSecret          string
+	AuthSessionStore       string
+	AuthSessionFile        string
+	AuthSessionRotation    bool
+	AuthRotationInterval   time.Duration
+	AuthRotationGrace      time.Duration
+	CookieTTL              time.Duration
+	LoginChallengeMode     string
+	PoWDifficulty          int
+	PoWAutoDifficulty      bool
+	PoWAutoRules           []string
+	PoWMinDifficulty       int
+	PoWMaxDifficulty       int
+	PoWSuspiciousUATokens  []string
+	PoWProgressMode        string
+	PoWChallengeTTL        time.Duration
+	TurnstileSiteKey       string
+	TurnstileSecretKey     string
+	TurnstileTheme         string
+	TurnstileAction        string
+	TurnstileVerifyURL     string
+	TurnstileVerifyTimeout time.Duration
+	TurnstileSessionTTL    time.Duration
+	TurnstileAllowedHosts  []string
+	MaxLoginFailures       int
+	LoginBanDuration       time.Duration
+	DefaultLang            string
+	AuthCookieName         string
+	LangCookieName         string
+	TrustProxyHeaders      bool
+	CookieSecureMode       string
+	DisabledModules        map[string]struct{}
+	IPLangRules            []ipLangRule
+	Now                    func() time.Time
 }
 
 type App struct {
@@ -149,6 +158,22 @@ type powLoginGuard struct {
 	now                func() time.Time
 }
 
+type turnstileLoginGuard struct {
+	siteKey       string
+	secretKey     string
+	theme         string
+	action        string
+	verifyURL     string
+	verifyTimeout time.Duration
+	sessionTTL    time.Duration
+	allowedHosts  []string
+	cookieName    string
+	signer        *SessionSigner
+	secureDecider func(*http.Request) bool
+	translator    *gatei18n.Translator
+	now           func() time.Time
+}
+
 type powChallengeStore struct {
 	mu         sync.Mutex
 	challenges map[string]powChallenge
@@ -221,4 +246,6 @@ type LoginPageData struct {
 	LanguageLabel   string
 	LanguageOptions []LoginLanguageOption
 	ChallengeHTML   []template.HTML
+	ScriptNonce     string
+	UsesTurnstile   bool
 }

@@ -25,15 +25,31 @@ func LoadConfigFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("parse AUTH_ROTATION_GRACE: %w", err)
 	}
+	loginChallengeMode := normalizeLoginChallengeMode(envOrDefault("LOGIN_CHALLENGE_MODE", defaultLoginChallengeMode))
+	if loginChallengeMode == "" {
+		return Config{}, fmt.Errorf("parse LOGIN_CHALLENGE_MODE: unsupported mode %q", os.Getenv("LOGIN_CHALLENGE_MODE"))
+	}
 	powChallengeTTL, err := parseDurationWithDays(envOrDefault("POW_CHALLENGE_TTL", defaultPoWTTL.String()))
 	if err != nil {
 		return Config{}, fmt.Errorf("parse POW_CHALLENGE_TTL: %w", err)
+	}
+	turnstileVerifyTimeout, err := parseDurationWithDays(envOrDefault("TURNSTILE_VERIFY_TIMEOUT", defaultTurnstileTimeout.String()))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse TURNSTILE_VERIFY_TIMEOUT: %w", err)
+	}
+	turnstileSessionTTL, err := parseDurationWithDays(envOrDefault("TURNSTILE_SESSION_TTL", defaultTurnstileVerifyTTL.String()))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse TURNSTILE_SESSION_TTL: %w", err)
 	}
 	authSessionRotation := envBool("AUTH_SESSION_ROTATION", true)
 	powAutoDifficulty := envBool("POW_AUTO_DIFFICULTY", false)
 	powProgressMode := normalizePoWProgressMode(envOrDefault("POW_PROGRESS_MODE", defaultPoWProgressMode))
 	if powProgressMode == "" {
 		return Config{}, fmt.Errorf("parse POW_PROGRESS_MODE: unsupported mode %q", os.Getenv("POW_PROGRESS_MODE"))
+	}
+	turnstileTheme := normalizeTurnstileTheme(envOrDefault("TURNSTILE_THEME", defaultTurnstileTheme))
+	if turnstileTheme == "" {
+		return Config{}, fmt.Errorf("parse TURNSTILE_THEME: unsupported theme %q", os.Getenv("TURNSTILE_THEME"))
 	}
 	authSessionStore := normalizeAuthSessionStore(envOrDefault("AUTH_SESSION_STORE", defaultAuthSessionStore))
 	if authSessionStore == "" {
@@ -74,32 +90,41 @@ func LoadConfigFromEnv() (Config, error) {
 	}
 
 	cfg := Config{
-		ListenAddr:            envOrDefault("LISTEN_ADDR", defaultListenAddr),
-		TargetURL:             strings.TrimSpace(os.Getenv("TARGET_URL")),
-		AuthPassword:          os.Getenv("AUTH_PASSWORD"),
-		SessionSecret:         os.Getenv("SESSION_SECRET"),
-		AuthSessionStore:      authSessionStore,
-		AuthSessionFile:       envOrDefault("AUTH_SESSION_FILE", defaultAuthSessionFile),
-		AuthSessionRotation:   authSessionRotation,
-		AuthRotationInterval:  authRotationInterval,
-		AuthRotationGrace:     authRotationGrace,
-		CookieTTL:             cookieTTL,
-		PoWDifficulty:         powDifficulty,
-		PoWAutoDifficulty:     powAutoDifficulty,
-		PoWAutoRules:          powAutoRules,
-		PoWMinDifficulty:      powMinDifficulty,
-		PoWMaxDifficulty:      powMaxDifficulty,
-		PoWSuspiciousUATokens: powSuspiciousUATokens,
-		PoWProgressMode:       powProgressMode,
-		PoWChallengeTTL:       powChallengeTTL,
-		MaxLoginFailures:      maxLoginFailures,
-		LoginBanDuration:      loginBanDuration,
-		DefaultLang:           normalizeLang(envOrDefault("DEFAULT_LANG", defaultLang)),
-		AuthCookieName:        envOrDefault("AUTH_COOKIE_NAME", defaultAuthCookie),
-		LangCookieName:        envOrDefault("LANG_COOKIE_NAME", defaultLangCookie),
-		TrustProxyHeaders:     envBool("TRUST_PROXY_HEADERS", false),
-		CookieSecureMode:      normalizeSecureMode(envOrDefault("COOKIE_SECURE_MODE", "auto")),
-		DisabledModules:       parseDisabledModules(os.Getenv("DISABLED_MODULES")),
+		ListenAddr:             envOrDefault("LISTEN_ADDR", defaultListenAddr),
+		TargetURL:              strings.TrimSpace(os.Getenv("TARGET_URL")),
+		AuthPassword:           os.Getenv("AUTH_PASSWORD"),
+		SessionSecret:          os.Getenv("SESSION_SECRET"),
+		AuthSessionStore:       authSessionStore,
+		AuthSessionFile:        envOrDefault("AUTH_SESSION_FILE", defaultAuthSessionFile),
+		AuthSessionRotation:    authSessionRotation,
+		AuthRotationInterval:   authRotationInterval,
+		AuthRotationGrace:      authRotationGrace,
+		CookieTTL:              cookieTTL,
+		LoginChallengeMode:     loginChallengeMode,
+		PoWDifficulty:          powDifficulty,
+		PoWAutoDifficulty:      powAutoDifficulty,
+		PoWAutoRules:           powAutoRules,
+		PoWMinDifficulty:       powMinDifficulty,
+		PoWMaxDifficulty:       powMaxDifficulty,
+		PoWSuspiciousUATokens:  powSuspiciousUATokens,
+		PoWProgressMode:        powProgressMode,
+		PoWChallengeTTL:        powChallengeTTL,
+		TurnstileSiteKey:       strings.TrimSpace(os.Getenv("TURNSTILE_SITE_KEY")),
+		TurnstileSecretKey:     strings.TrimSpace(os.Getenv("TURNSTILE_SECRET_KEY")),
+		TurnstileTheme:         turnstileTheme,
+		TurnstileAction:        envOrDefault("TURNSTILE_ACTION", defaultTurnstileAction),
+		TurnstileVerifyURL:     envOrDefault("TURNSTILE_VERIFY_URL", defaultTurnstileVerifyURL),
+		TurnstileVerifyTimeout: turnstileVerifyTimeout,
+		TurnstileSessionTTL:    turnstileSessionTTL,
+		TurnstileAllowedHosts:  parseHostList(os.Getenv("TURNSTILE_ALLOWED_HOSTS")),
+		MaxLoginFailures:       maxLoginFailures,
+		LoginBanDuration:       loginBanDuration,
+		DefaultLang:            normalizeLang(envOrDefault("DEFAULT_LANG", defaultLang)),
+		AuthCookieName:         envOrDefault("AUTH_COOKIE_NAME", defaultAuthCookie),
+		LangCookieName:         envOrDefault("LANG_COOKIE_NAME", defaultLangCookie),
+		TrustProxyHeaders:      envBool("TRUST_PROXY_HEADERS", false),
+		CookieSecureMode:       normalizeSecureMode(envOrDefault("COOKIE_SECURE_MODE", "auto")),
+		DisabledModules:        parseDisabledModules(os.Getenv("DISABLED_MODULES")),
 	}
 
 	if cfg.TargetURL == "" {
@@ -125,6 +150,14 @@ func LoadConfigFromEnv() (Config, error) {
 	if cfg.SessionSecret == "" {
 		cfg.SessionSecret = cfg.AuthPassword
 		log.Printf("warning: SESSION_SECRET is empty; using AUTH_PASSWORD-derived secret. Set SESSION_SECRET for better separation.")
+	}
+	if challengeModeIncludesTurnstile(cfg.LoginChallengeMode) {
+		if cfg.TurnstileSiteKey == "" {
+			return Config{}, errors.New("TURNSTILE_SITE_KEY is required when LOGIN_CHALLENGE_MODE enables turnstile")
+		}
+		if cfg.TurnstileSecretKey == "" {
+			return Config{}, errors.New("TURNSTILE_SECRET_KEY is required when LOGIN_CHALLENGE_MODE enables turnstile")
+		}
 	}
 
 	rules, err := parseIPLangRules(envOrDefault("I18N_IP_LANG_RULES", defaultIPLangRules()))
@@ -263,6 +296,18 @@ func splitCSV(raw string) []string {
 		out = append(out, strings.TrimSpace(field))
 	}
 	return out
+}
+
+func parseHostList(raw string) []string {
+	hosts := make([]string, 0)
+	for _, token := range splitCSV(raw) {
+		host := normalizeHostname(token)
+		if host == "" {
+			continue
+		}
+		hosts = append(hosts, host)
+	}
+	return hosts
 }
 
 func isDisabled(cfg Config, moduleID string) bool {

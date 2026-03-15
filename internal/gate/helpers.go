@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"net/http"
+	"net/url"
 	"strings"
 
 	gatei18n "auth-proxy/internal/gate/i18n"
@@ -90,6 +91,84 @@ func normalizePoWProgressMode(value string) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeLoginChallengeMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return defaultLoginChallengeMode
+	case "none", "off", "disabled":
+		return "none"
+	case "pow":
+		return "pow"
+	case "turnstile", "cf-turnstile":
+		return "turnstile"
+	case "pow+turnstile", "turnstile+pow", "both":
+		return "pow+turnstile"
+	default:
+		return ""
+	}
+}
+
+func challengeModeIncludesPoW(value string) bool {
+	switch normalizeLoginChallengeMode(value) {
+	case "pow", "pow+turnstile":
+		return true
+	default:
+		return false
+	}
+}
+
+func challengeModeIncludesTurnstile(value string) bool {
+	switch normalizeLoginChallengeMode(value) {
+	case "turnstile", "pow+turnstile":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeTurnstileTheme(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", defaultTurnstileTheme:
+		return defaultTurnstileTheme
+	case "light":
+		return "light"
+	case "dark":
+		return "dark"
+	default:
+		return ""
+	}
+}
+
+func normalizeHostname(value string) string {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return ""
+	}
+	if parsed, err := url.Parse("//" + raw); err == nil {
+		if host := parsed.Hostname(); host != "" {
+			return strings.ToLower(host)
+		}
+	}
+	return strings.ToLower(strings.Trim(raw, "[]"))
+}
+
+func isTurnstileTokenLabel(value string, maxLen int) bool {
+	if value == "" || len(value) > maxLen {
+		return false
+	}
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeAuthSessionStore(value string) string {

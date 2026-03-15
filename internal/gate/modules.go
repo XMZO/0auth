@@ -26,7 +26,7 @@ func buildLanguageDetectors(cfg Config) []LanguageDetector {
 }
 
 func buildLoginGuards(cfg Config, signer *SessionSigner, translator *gatei18n.Translator) []LoginGuard {
-	guards := make([]LoginGuard, 0, 2)
+	guards := make([]LoginGuard, 0, 3)
 	powStore := newPowChallengeStore(cfg.Now)
 
 	if cfg.MaxLoginFailures > 0 && cfg.LoginBanDuration > 0 {
@@ -39,7 +39,7 @@ func buildLoginGuards(cfg Config, signer *SessionSigner, translator *gatei18n.Tr
 			states:            map[string]attemptState{},
 		})
 	}
-	if cfg.PoWDifficulty > 0 {
+	if challengeModeIncludesPoW(cfg.LoginChallengeMode) && cfg.PoWDifficulty > 0 {
 		guards = append(guards, &powLoginGuard{
 			baseDifficulty:     cfg.PoWDifficulty,
 			autoDifficulty:     cfg.PoWAutoDifficulty,
@@ -55,6 +55,25 @@ func buildLoginGuards(cfg Config, signer *SessionSigner, translator *gatei18n.Tr
 				return shouldUseSecureCookie(cfg, r)
 			},
 			store:      powStore,
+			translator: translator,
+			now:        cfg.Now,
+		})
+	}
+	if challengeModeIncludesTurnstile(cfg.LoginChallengeMode) {
+		guards = append(guards, &turnstileLoginGuard{
+			siteKey:       cfg.TurnstileSiteKey,
+			secretKey:     cfg.TurnstileSecretKey,
+			theme:         cfg.TurnstileTheme,
+			action:        cfg.TurnstileAction,
+			verifyURL:     cfg.TurnstileVerifyURL,
+			verifyTimeout: cfg.TurnstileVerifyTimeout,
+			sessionTTL:    cfg.TurnstileSessionTTL,
+			allowedHosts:  cfg.TurnstileAllowedHosts,
+			cookieName:    cfg.AuthCookieName + "_turnstile",
+			signer:        signer,
+			secureDecider: func(r *http.Request) bool {
+				return shouldUseSecureCookie(cfg, r)
+			},
 			translator: translator,
 			now:        cfg.Now,
 		})

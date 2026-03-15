@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -1606,6 +1607,328 @@ func TestPoWChallengeRequiresBrowserSession(t *testing.T) {
 	}
 }
 
+func TestLoginChallengeModeNoneSkipsAllChallenges(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("upstream ok"))
+	}))
+	defer upstream.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:          ":0",
+		TargetURL:           upstream.URL,
+		AuthPassword:        "secret-pass",
+		SessionSecret:       "session-secret",
+		CookieTTL:           24 * time.Hour,
+		LoginChallengeMode:  "none",
+		PoWDifficulty:       4,
+		TurnstileSiteKey:    "site-key",
+		TurnstileSecretKey:  "secret-key",
+		TurnstileTheme:      "auto",
+		TurnstileAction:     "login",
+		TurnstileVerifyURL:  "https://example.invalid/turnstile",
+		TurnstileSessionTTL: time.Minute,
+		MaxLoginFailures:    5,
+		LoginBanDuration:    10 * time.Minute,
+		DefaultLang:         "en",
+		AuthCookieName:      defaultAuthCookie,
+		LangCookieName:      defaultLangCookie,
+		CookieSecureMode:    "never",
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+
+	loginResp, err := client.Get(proxy.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / error = %v", err)
+	}
+	loginBody, err := io.ReadAll(loginResp.Body)
+	loginResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(login) error = %v", err)
+	}
+	if loginResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("login page status = %d, want %d", loginResp.StatusCode, http.StatusUnauthorized)
+	}
+	if strings.Contains(string(loginBody), `name="pow_id"`) {
+		t.Fatalf("login page unexpectedly rendered PoW: %s", loginBody)
+	}
+	if strings.Contains(string(loginBody), `class="cf-turnstile"`) {
+		t.Fatalf("login page unexpectedly rendered Turnstile: %s", loginBody)
+	}
+	if strings.Contains(loginResp.Header.Get("Content-Security-Policy"), "challenges.cloudflare.com") {
+		t.Fatalf("login page CSP unexpectedly allowed turnstile host: %s", loginResp.Header.Get("Content-Security-Policy"))
+	}
+
+	okResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password": {"secret-pass"},
+		"next":     {"/"},
+		"lang":     {"en"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	okBody, err := io.ReadAll(okResp.Body)
+	okResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(ok) error = %v", err)
+	}
+	if okResp.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", okResp.StatusCode, http.StatusOK)
+	}
+	if strings.TrimSpace(string(okBody)) != "upstream ok" {
+		t.Fatalf("login body = %q, want %q", strings.TrimSpace(string(okBody)), "upstream ok")
+	}
+}
+
+func TestTurnstileLoginFlow(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("upstream ok"))
+	}))
+	defer upstream.Close()
+
+	var expectedCData string
+	var gotSecret string
+	var gotResponse string
+	verifyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("verifyServer ParseForm() error = %v", err)
+		}
+		gotSecret = r.FormValue("secret")
+		gotResponse = r.FormValue("response")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":  true,
+			"hostname": "127.0.0.1",
+			"action":   "login",
+			"cdata":    expectedCData,
+		})
+	}))
+	defer verifyServer.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:             ":0",
+		TargetURL:              upstream.URL,
+		AuthPassword:           "secret-pass",
+		SessionSecret:          "session-secret",
+		CookieTTL:              24 * time.Hour,
+		LoginChallengeMode:     "turnstile",
+		PoWDifficulty:          3,
+		TurnstileSiteKey:       "site-key",
+		TurnstileSecretKey:     "secret-key",
+		TurnstileTheme:         "auto",
+		TurnstileAction:        "login",
+		TurnstileVerifyURL:     verifyServer.URL,
+		TurnstileVerifyTimeout: time.Second,
+		TurnstileSessionTTL:    time.Minute,
+		MaxLoginFailures:       5,
+		LoginBanDuration:       10 * time.Minute,
+		DefaultLang:            "en",
+		AuthCookieName:         defaultAuthCookie,
+		LangCookieName:         defaultLangCookie,
+		CookieSecureMode:       "never",
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+
+	loginResp, err := client.Get(proxy.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / error = %v", err)
+	}
+	loginBody, err := io.ReadAll(loginResp.Body)
+	loginResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(login) error = %v", err)
+	}
+	if loginResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("login page status = %d, want %d", loginResp.StatusCode, http.StatusUnauthorized)
+	}
+	if !strings.Contains(string(loginBody), `class="cf-turnstile"`) {
+		t.Fatalf("login page missing turnstile widget: %s", loginBody)
+	}
+	if strings.Contains(string(loginBody), `name="pow_id"`) {
+		t.Fatalf("login page unexpectedly rendered PoW: %s", loginBody)
+	}
+	csp := loginResp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(csp, "https://challenges.cloudflare.com") {
+		t.Fatalf("login page CSP missing turnstile host: %s", csp)
+	}
+
+	expectedCData = extractTurnstileCData(t, string(loginBody))
+
+	okResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password":          {"secret-pass"},
+		"next":              {"/"},
+		"lang":              {"en"},
+		turnstileTokenKey(): {"turnstile-ok"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	okBody, err := io.ReadAll(okResp.Body)
+	okResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(ok) error = %v", err)
+	}
+	if okResp.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", okResp.StatusCode, http.StatusOK)
+	}
+	if strings.TrimSpace(string(okBody)) != "upstream ok" {
+		t.Fatalf("login body = %q, want %q", strings.TrimSpace(string(okBody)), "upstream ok")
+	}
+	if gotSecret != "secret-key" {
+		t.Fatalf("verify secret = %q, want %q", gotSecret, "secret-key")
+	}
+	if gotResponse != "turnstile-ok" {
+		t.Fatalf("verify response token = %q, want %q", gotResponse, "turnstile-ok")
+	}
+}
+
+func TestLoginChallengeModePowAndTurnstileRequiresBoth(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("upstream ok"))
+	}))
+	defer upstream.Close()
+
+	var expectedCData string
+	verifyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":  true,
+			"hostname": "127.0.0.1",
+			"action":   "login",
+			"cdata":    expectedCData,
+		})
+	}))
+	defer verifyServer.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:             ":0",
+		TargetURL:              upstream.URL,
+		AuthPassword:           "secret-pass",
+		SessionSecret:          "session-secret",
+		CookieTTL:              24 * time.Hour,
+		LoginChallengeMode:     "pow+turnstile",
+		PoWDifficulty:          2,
+		PoWChallengeTTL:        time.Minute,
+		TurnstileSiteKey:       "site-key",
+		TurnstileSecretKey:     "secret-key",
+		TurnstileTheme:         "auto",
+		TurnstileAction:        "login",
+		TurnstileVerifyURL:     verifyServer.URL,
+		TurnstileVerifyTimeout: time.Second,
+		TurnstileSessionTTL:    time.Minute,
+		MaxLoginFailures:       5,
+		LoginBanDuration:       10 * time.Minute,
+		DefaultLang:            "en",
+		AuthCookieName:         defaultAuthCookie,
+		LangCookieName:         defaultLangCookie,
+		CookieSecureMode:       "never",
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+
+	loginResp, err := client.Get(proxy.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / error = %v", err)
+	}
+	loginBody, err := io.ReadAll(loginResp.Body)
+	loginResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(login) error = %v", err)
+	}
+	if !strings.Contains(string(loginBody), `name="pow_id"`) {
+		t.Fatalf("login page missing PoW fields: %s", loginBody)
+	}
+	if !strings.Contains(string(loginBody), `class="cf-turnstile"`) {
+		t.Fatalf("login page missing turnstile widget: %s", loginBody)
+	}
+
+	expectedCData = extractTurnstileCData(t, string(loginBody))
+	powID, powToken, powDifficulty := extractPoWFields(t, string(loginBody))
+	powNonce := solvePoWNonce(powToken, powDifficulty)
+
+	missingTurnstileResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password":       {"secret-pass"},
+		"next":           {"/"},
+		"lang":           {"en"},
+		"pow_id":         {powID},
+		"pow_token":      {powToken},
+		"pow_nonce":      {powNonce},
+		"pow_difficulty": {strconv.Itoa(powDifficulty)},
+	})
+	if err != nil {
+		t.Fatalf("POST without turnstile token error = %v", err)
+	}
+	missingTurnstileBody, err := io.ReadAll(missingTurnstileResp.Body)
+	missingTurnstileResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(missing turnstile) error = %v", err)
+	}
+	if missingTurnstileResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("missing turnstile status = %d, want %d", missingTurnstileResp.StatusCode, http.StatusForbidden)
+	}
+	if !strings.Contains(string(missingTurnstileBody), "The security check did not finish. Please try again.") {
+		t.Fatalf("missing turnstile body missing guard error: %s", missingTurnstileBody)
+	}
+
+	retryResp, err := client.Get(proxy.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / retry error = %v", err)
+	}
+	retryBody, err := io.ReadAll(retryResp.Body)
+	retryResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(retry) error = %v", err)
+	}
+
+	expectedCData = extractTurnstileCData(t, string(retryBody))
+	powID, powToken, powDifficulty = extractPoWFields(t, string(retryBody))
+	powNonce = solvePoWNonce(powToken, powDifficulty)
+
+	okResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password":          {"secret-pass"},
+		"next":              {"/"},
+		"lang":              {"en"},
+		"pow_id":            {powID},
+		"pow_token":         {powToken},
+		"pow_nonce":         {powNonce},
+		"pow_difficulty":    {strconv.Itoa(powDifficulty)},
+		turnstileTokenKey(): {"turnstile-ok"},
+	})
+	if err != nil {
+		t.Fatalf("POST with both challenges error = %v", err)
+	}
+	okBody, err := io.ReadAll(okResp.Body)
+	okResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(ok) error = %v", err)
+	}
+	if okResp.StatusCode != http.StatusOK {
+		t.Fatalf("combined login status = %d, want %d", okResp.StatusCode, http.StatusOK)
+	}
+	if strings.TrimSpace(string(okBody)) != "upstream ok" {
+		t.Fatalf("combined login body = %q, want %q", strings.TrimSpace(string(okBody)), "upstream ok")
+	}
+}
+
 func TestParseDurationWithDays(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1694,6 +2017,20 @@ func extractPoWFields(t *testing.T, body string) (string, string, int) {
 	}
 
 	return idMatch[1], tokenMatch[1], difficulty
+}
+
+func extractTurnstileCData(t *testing.T, body string) string {
+	t.Helper()
+
+	match := regexp.MustCompile(`data-cdata="([^"]+)"`).FindStringSubmatch(body)
+	if len(match) != 2 {
+		t.Fatalf("turnstile cdata not found in body: %s", body)
+	}
+	return match[1]
+}
+
+func turnstileTokenKey() string {
+	return "turnstile_token"
 }
 
 func solvePoWNonce(token string, difficulty int) string {

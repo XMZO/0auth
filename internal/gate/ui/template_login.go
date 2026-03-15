@@ -7,16 +7,29 @@ import (
 
 var LoginTemplate = template.Must(template.New("login").Parse(loginPageHTML))
 
-func LoginPageCSP(scriptNonce string) string {
+func LoginPageCSP(scriptNonce string, usesTurnstile bool) string {
 	builder := strings.Builder{}
-	builder.WriteString("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; worker-src 'self' blob:")
+	builder.WriteString("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; worker-src 'self' blob:; connect-src 'self'")
+	if usesTurnstile {
+		builder.WriteString(" https://challenges.cloudflare.com")
+	}
+	if usesTurnstile {
+		builder.WriteString("; frame-src https://challenges.cloudflare.com")
+	}
+	builder.WriteString("; script-src ")
 	if scriptNonce == "" {
-		builder.WriteString("; script-src 'self' 'unsafe-inline'")
+		builder.WriteString("'self' 'unsafe-inline'")
+		if usesTurnstile {
+			builder.WriteString(" https://challenges.cloudflare.com")
+		}
 		return builder.String()
 	}
-	builder.WriteString("; script-src 'nonce-")
+	builder.WriteString("'nonce-")
 	builder.WriteString(scriptNonce)
 	builder.WriteString("'")
+	if usesTurnstile {
+		builder.WriteString(" https://challenges.cloudflare.com")
+	}
 	return builder.String()
 }
 
@@ -277,7 +290,15 @@ const loginPageHTML = `<!doctype html>
       border-top: 1px solid var(--rule);
     }
 
-    .pow-status {
+    .turnstile-box {
+      display: grid;
+      gap: 0.55rem;
+      padding: 0.95rem 0 0.9rem;
+      border-top: 1px solid var(--rule);
+    }
+
+    .pow-status,
+    .turnstile-status {
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -287,7 +308,8 @@ const loginPageHTML = `<!doctype html>
       color: var(--muted);
     }
 
-    .pow-status::before {
+    .pow-status::before,
+    .turnstile-status::before {
       content: "";
       width: 0.38rem;
       height: 0.38rem;
@@ -297,21 +319,29 @@ const loginPageHTML = `<!doctype html>
     }
 
     .pow-status[data-state="running"],
-    .pow-status[data-state="ready"] {
+    .pow-status[data-state="ready"],
+    .turnstile-status[data-state="ready"] {
       color: var(--ink);
     }
 
-    .pow-status[data-state="ready"]::before {
+    .pow-status[data-state="ready"]::before,
+    .turnstile-status[data-state="ready"]::before {
       background: var(--accent);
     }
 
     .pow-status[data-state="failed"],
-    .pow-status[data-state="unsupported"] {
+    .pow-status[data-state="unsupported"],
+    .turnstile-status[data-state="failed"],
+    .turnstile-status[data-state="expired"],
+    .turnstile-status[data-state="unsupported"] {
       color: var(--accent-2);
     }
 
     .pow-status[data-state="failed"]::before,
-    .pow-status[data-state="unsupported"]::before {
+    .pow-status[data-state="unsupported"]::before,
+    .turnstile-status[data-state="failed"]::before,
+    .turnstile-status[data-state="expired"]::before,
+    .turnstile-status[data-state="unsupported"]::before {
       background: var(--accent-2);
     }
 
@@ -332,6 +362,16 @@ const loginPageHTML = `<!doctype html>
       height: 100%;
       background: linear-gradient(90deg, var(--accent), var(--accent-2));
       transition: width 0.18s ease;
+    }
+
+    .turnstile-widget {
+      width: 100%;
+      min-height: 72px;
+    }
+
+    .turnstile-widget .cf-turnstile {
+      width: 100%;
+      max-width: 100%;
     }
 
     .actions {
@@ -392,6 +432,52 @@ const loginPageHTML = `<!doctype html>
       }
     }
   </style>
+  {{if .UsesTurnstile}}
+  <script nonce="{{.ScriptNonce}}" src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer></script>
+  {{end}}
+  <script nonce="{{.ScriptNonce}}">
+    (() => {
+      function ensureState(form) {
+        if (!form) return null;
+        if (!form.__authLoginGuardsState) {
+          form.__authLoginGuardsState = {
+            ready: Object.create(null),
+            submitButton: form.querySelector('button[type="submit"]'),
+          };
+        }
+        return form.__authLoginGuardsState;
+      }
+
+      function sync(form) {
+        const state = ensureState(form);
+        if (!state || !state.submitButton) return;
+
+        let blocked = false;
+        for (const key in state.ready) {
+          if (!state.ready[key]) {
+            blocked = true;
+            break;
+          }
+        }
+        state.submitButton.disabled = blocked;
+      }
+
+      window.__authLoginGuards = {
+        register(form, id, ready) {
+          const state = ensureState(form);
+          if (!state) return;
+          state.ready[id] = !!ready;
+          sync(form);
+        },
+        setReady(form, id, ready) {
+          const state = ensureState(form);
+          if (!state) return;
+          state.ready[id] = !!ready;
+          sync(form);
+        },
+      };
+    })();
+  </script>
 </head>
 <body>
   <main class="shell">
