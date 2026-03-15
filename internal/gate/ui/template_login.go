@@ -9,7 +9,7 @@ var LoginTemplate = template.Must(template.New("login").Parse(loginPageHTML))
 
 func LoginPageCSP(scriptNonce string) string {
 	builder := strings.Builder{}
-	builder.WriteString("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	builder.WriteString("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; worker-src 'self' blob:")
 	if scriptNonce == "" {
 		builder.WriteString("; script-src 'self' 'unsafe-inline'")
 		return builder.String()

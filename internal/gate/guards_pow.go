@@ -71,6 +71,8 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
     const expectedWork = difficulty <= 0 ? 1 : Math.pow(16, difficulty);
     const encoder = new TextEncoder();
     submitButton.disabled = true;
+    const threadCount = Math.max(1, Math.min(8, Math.trunc(Math.max((navigator.hardwareConcurrency || 1) / 2, 1))));
+    const workerBatchSize = 192;
     const progressMode = "%s";
     const minProgressUpdateMs = 100;
     const minProgressAttemptDelta = 1024;
@@ -85,6 +87,15 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
       const clamped = Math.max(0, Math.min(100, percent));
       progressFill.style.width = clamped.toFixed(1) + "%%";
       progressTrack.setAttribute("aria-valuenow", clamped.toFixed(1));
+    }
+
+    function canUseWorkers() {
+      return Boolean(
+        window.Worker &&
+        window.Blob &&
+        window.URL &&
+        typeof window.URL.createObjectURL === "function"
+      );
     }
 
     function revealSolvedProgress() {
@@ -160,24 +171,133 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
       return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     }
 
-    async function solve() {
-      setStatus("%s", "running");
+    async function solveSingleThread() {
       let nonce = 0;
       const startedAt = performance.now();
       while (true) {
         for (let i = 0; i < 200; i += 1, nonce += 1) {
           const hash = await sha256Hex(tokenInput.value + ":" + nonce);
           if (hash.startsWith(zeroPrefix)) {
-            nonceInput.value = String(nonce);
-            submitButton.disabled = false;
-            updateProgress(nonce + 1, (performance.now() - startedAt) / 1000, true);
-            setStatus("%s", "ready");
-            return;
+            return { nonce, elapsedSeconds: (performance.now() - startedAt) / 1000 };
           }
         }
         updateProgress(nonce, (performance.now() - startedAt) / 1000, false);
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
+    }
+
+    async function solveWithWorkers() {
+      const workerSource = [
+        'const encoder = new TextEncoder();',
+        'function toHex(bytes) {',
+        '  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");',
+        '}',
+        'function hasLeadingZeroNibbles(bytes, difficulty) {',
+        '  if (difficulty <= 0) return true;',
+        '  const fullBytes = Math.floor(difficulty / 2);',
+        '  for (let i = 0; i < fullBytes; i += 1) {',
+        '    if (bytes[i] !== 0) return false;',
+        '  }',
+        '  if ((difficulty & 1) === 1) {',
+        '    return (bytes[fullBytes] >> 4) === 0;',
+        '  }',
+        '  return true;',
+        '}',
+        'async function sha256Bytes(text) {',
+        '  return new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text)));',
+        '}',
+        'self.onmessage = async (event) => {',
+        '  const { token, difficulty, startNonce, step, batchSize, reportProgress } = event.data;',
+        '  let nonce = startNonce;',
+        '  let iterations = 0;',
+        '  for (;;) {',
+        '    for (let i = 0; i < batchSize; i += 1, nonce += step) {',
+        '      const hashBytes = await sha256Bytes(token + ":" + nonce);',
+        '      if (hasLeadingZeroNibbles(hashBytes, difficulty)) {',
+        '        self.postMessage({ type: "solved", nonce, hash: toHex(hashBytes) });',
+        '        return;',
+        '      }',
+        '      iterations += 1;',
+        '      if (reportProgress && (iterations & 1023) === 0) {',
+        '        self.postMessage({ type: "progress", attempts: nonce + step });',
+        '      }',
+        '    }',
+        '  }',
+        '};',
+      ].join("\n");
+
+      const workerURL = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+      const startedAt = performance.now();
+
+      return await new Promise((resolve, reject) => {
+        const workers = [];
+        let settled = false;
+
+        function cleanup() {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          for (const worker of workers) {
+            worker.terminate();
+          }
+          URL.revokeObjectURL(workerURL);
+        }
+
+        for (let index = 0; index < threadCount; index += 1) {
+          const worker = new Worker(workerURL);
+          worker.onmessage = (event) => {
+            if (settled) {
+              return;
+            }
+            const data = event.data || {};
+            if (data.type === "progress") {
+              updateProgress(Number(data.attempts || 0), (performance.now() - startedAt) / 1000, false);
+              return;
+            }
+            if (data.type === "solved") {
+              cleanup();
+              resolve({ nonce: Number(data.nonce || 0), elapsedSeconds: (performance.now() - startedAt) / 1000 });
+            }
+          };
+          worker.onerror = () => {
+            if (settled) {
+              return;
+            }
+            cleanup();
+            reject(new Error("pow_worker_failed"));
+          };
+          worker.postMessage({
+            token: tokenInput.value,
+            difficulty,
+            startNonce: index,
+            step: threadCount,
+            batchSize: workerBatchSize,
+            reportProgress: index === 0,
+          });
+          workers.push(worker);
+        }
+      });
+    }
+
+    async function solve() {
+      setStatus("%s", "running");
+      let result = null;
+      if (canUseWorkers() && threadCount > 1) {
+        try {
+          result = await solveWithWorkers();
+        } catch (error) {
+          console.warn("PoW worker path failed, falling back to single thread", error);
+        }
+      }
+      if (!result) {
+        result = await solveSingleThread();
+      }
+
+      nonceInput.value = String(result.nonce);
+      submitButton.disabled = false;
+      updateProgress(result.nonce + 1, result.elapsedSeconds, true);
+      setStatus("%s", "ready");
     }
 
     form.addEventListener("submit", (event) => {

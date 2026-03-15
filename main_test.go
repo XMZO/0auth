@@ -94,6 +94,9 @@ func TestLoginAndProxyFlow(t *testing.T) {
 	if cacheControl := unauthResp.Header.Get("Cache-Control"); !strings.Contains(cacheControl, "no-store") {
 		t.Fatalf("challenge page Cache-Control = %q, want no-store", cacheControl)
 	}
+	if csp := unauthResp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "worker-src 'self' blob:") {
+		t.Fatalf("challenge page CSP = %q, want worker-src blob support", csp)
+	}
 	if surrogate := unauthResp.Header.Get("Surrogate-Control"); !strings.Contains(strings.ToLower(surrogate), "no-store") {
 		t.Fatalf("challenge page Surrogate-Control = %q, want no-store", surrogate)
 	}
@@ -777,6 +780,12 @@ func TestPoWProgressModeRender(t *testing.T) {
 		want := `const progressMode = "` + mode + `";`
 		if !strings.Contains(string(body), want) {
 			t.Fatalf("body missing progress mode marker %q", want)
+		}
+		if !strings.Contains(string(body), `const threadCount = Math.max(1, Math.min(8, Math.trunc(Math.max((navigator.hardwareConcurrency || 1) / 2, 1))));`) {
+			t.Fatalf("body missing multi-worker thread count marker")
+		}
+		if !strings.Contains(string(body), `const workerSource = [`) {
+			t.Fatalf("body missing worker PoW source marker")
 		}
 		if mode == "estimated" {
 			if !strings.Contains(string(body), "const minProgressUpdateMs = 100;") {
