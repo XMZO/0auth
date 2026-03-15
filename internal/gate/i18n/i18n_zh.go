@@ -2,7 +2,7 @@ package i18n
 
 func zhMessages() map[string]string {
 	return map[string]string{
-		"login_title":         "继续访问",
+		"login_title":         "Null Trust",
 		"login_tagline":       "",
 		"password_label":      "访问密码",
 		"password_hint":       "请输入密码",

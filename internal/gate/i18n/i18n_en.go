@@ -2,7 +2,7 @@ package i18n
 
 func enMessages() map[string]string {
 	return map[string]string{
-		"login_title":         "Continue",
+		"login_title":         "Null Trust",
 		"login_tagline":       "",
 		"password_label":      "Password",
 		"password_hint":       "Enter password",
