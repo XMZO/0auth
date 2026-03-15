@@ -28,6 +28,12 @@ SESSION_SECRET=replace-with-a-long-random-secret
 docker compose up -d
 ```
 
+文件会话默认会写到：
+
+```text
+./data/auth-sessions.json
+```
+
 ## 端口说明
 
 如果你的原项目已经占用：
@@ -65,3 +71,8 @@ ghcr.io/xmzo/0auth:latest
 ## 配置
 
 常用配置都在 `.env.example`。
+
+## file 模式路径
+
+- 容器内路径：`/var/lib/0auth/auth-sessions.json`
+- 宿主机路径：`./data/auth-sessions.json`

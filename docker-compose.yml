@@ -14,9 +14,11 @@ services:
     env_file:
       - .env
 
-    # file 会话存储默认写到这里，重启容器后仍可保留登录态
+    # file 模式下：
+    # 容器内 /var/lib/0auth/auth-sessions.json
+    # 对应宿主机当前目录 ./data/auth-sessions.json
     volumes:
-      - 0auth-data:/var/lib/0auth
+      - ./data:/var/lib/0auth
 
     # 根文件系统保持只读，只有会话卷和 /tmp 可写
     read_only: true
@@ -35,6 +37,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  0auth-data:
