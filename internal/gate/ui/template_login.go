@@ -28,242 +28,376 @@ const loginPageHTML = `<!doctype html>
   <title>{{.Title}}</title>
   <style>
     :root {
-      color-scheme: light;
-      --bg1: #f4f7fb;
-      --bg2: #e3ecff;
-      --card: rgba(255, 255, 255, 0.88);
-      --text: #14213d;
-      --muted: #5c6784;
-      --accent: #1565c0;
-      --accent-2: #1f8a70;
-      --border: rgba(20, 33, 61, 0.12);
-      --danger: #b42318;
-      --success: #067647;
-      --shadow: 0 24px 60px rgba(21, 37, 66, 0.18);
+      color-scheme: light dark;
+      --font-body: "Verdana", "Geneva", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-title: "Georgia", "Times New Roman", "Noto Serif CJK SC", "Songti SC", serif;
+      --font-mono: "Courier New", "Cascadia Mono", "Consolas", monospace;
+      --bg: #d8cdbb;
+      --bg-2: #d0c3ae;
+      --paper: rgba(255, 252, 246, 0.04);
+      --grid: rgba(33, 28, 22, 0.075);
+      --ink: #15110d;
+      --muted: #51483d;
+      --rule: rgba(21, 17, 13, 0.22);
+      --rule-strong: rgba(21, 17, 13, 0.36);
+      --accent: #315f6d;
+      --accent-2: #8b4f33;
+      --danger-bg: rgba(139, 79, 51, 0.08);
+      --danger-line: rgba(139, 79, 51, 0.5);
+      --success-bg: rgba(49, 95, 109, 0.08);
+      --success-line: rgba(49, 95, 109, 0.46);
+      --button-bg: rgba(21, 17, 13, 0.08);
+      --button-bg-hover: rgba(21, 17, 13, 0.15);
     }
 
-    * { box-sizing: border-box; }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #15110d;
+        --bg-2: #1b1611;
+        --paper: rgba(255, 255, 255, 0.012);
+        --grid: rgba(229, 221, 209, 0.06);
+        --ink: #eee4d7;
+        --muted: #b8ad9d;
+        --rule: rgba(238, 228, 215, 0.18);
+        --rule-strong: rgba(238, 228, 215, 0.32);
+        --danger-bg: rgba(139, 79, 51, 0.14);
+        --danger-line: rgba(221, 134, 96, 0.44);
+        --success-bg: rgba(49, 95, 109, 0.16);
+        --success-line: rgba(125, 180, 197, 0.42);
+        --button-bg: rgba(255, 255, 255, 0.035);
+        --button-bg-hover: rgba(255, 255, 255, 0.08);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-height: 100%;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
 
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: var(--text);
+      font-family: var(--font-body);
+      color: var(--ink);
       background:
-        radial-gradient(circle at top left, rgba(21, 101, 192, 0.16), transparent 32%),
-        radial-gradient(circle at bottom right, rgba(31, 138, 112, 0.18), transparent 28%),
-        linear-gradient(135deg, var(--bg1), var(--bg2));
+        linear-gradient(180deg, var(--paper), transparent 22%),
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+        linear-gradient(180deg, var(--bg), var(--bg-2));
+      background-size:
+        100% 100%,
+        13px 13px,
+        13px 13px,
+        100% 100%;
       display: grid;
       place-items: center;
-      padding: 24px;
+      padding: 2rem 1.25rem;
     }
 
-    .card {
-      width: min(460px, 100%);
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(12px);
-      overflow: hidden;
+    .shell {
+      width: min(35rem, 100%);
+      padding: 0.25rem 0 0;
+      background: none;
+      border: 0;
+      box-shadow: none;
     }
 
-    .hero {
-      padding: 28px 28px 22px;
-      background:
-        linear-gradient(135deg, rgba(21, 101, 192, 0.96), rgba(31, 138, 112, 0.88));
-      color: #fff;
+    .masthead {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.75rem 1.25rem;
+      align-items: end;
+      padding-bottom: 0.9rem;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .title-wrap {
+      display: grid;
+      gap: 0.55rem;
+      min-width: 0;
+    }
+
+    .title-wrap::before {
+      content: "";
+      width: 2.4rem;
+      height: 1px;
+      background: linear-gradient(90deg, var(--accent), transparent);
     }
 
     h1 {
       margin: 0;
-      font-size: 30px;
-      line-height: 1.15;
+      font-family: var(--font-title);
+      font-size: clamp(2.05rem, 4vw, 2.5rem);
+      line-height: 1.04;
+      font-weight: 600;
+      letter-spacing: -0.035em;
+    }
+
+    html[lang="zh"] h1 {
+      font-size: clamp(2.15rem, 4.4vw, 2.65rem);
+      letter-spacing: -0.06em;
+      font-weight: 650;
     }
 
     .subtitle {
       margin: 0;
-      color: rgba(255, 255, 255, 0.9);
+      max-width: 28rem;
+      font-size: 0.875rem;
       line-height: 1.6;
-      font-size: 15px;
-    }
-
-    .content {
-      padding: 24px 28px 28px;
+      color: var(--muted);
     }
 
     .lang-switch {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 22px;
+      justify-content: flex-end;
+      gap: 0.7rem;
       flex-wrap: wrap;
+      padding-bottom: 0.1rem;
     }
 
-    .lang-switch span {
-      font-size: 14px;
+    .lang-label {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--muted);
+      white-space: nowrap;
     }
 
     .lang-links {
-      display: flex;
-      gap: 10px;
+      display: inline-flex;
+      gap: 0.75rem;
+      align-items: center;
     }
 
-    .lang-links a {
+    .lang-link {
+      padding: 0;
+      color: var(--muted);
       text-decoration: none;
-      color: var(--accent);
-      border: 1px solid rgba(21, 101, 192, 0.18);
-      background: rgba(21, 101, 192, 0.06);
-      padding: 8px 12px;
-      border-radius: 999px;
-      font-size: 14px;
-      transition: transform 0.15s ease, background 0.15s ease;
+      border-bottom: 1px solid transparent;
+      font-size: 0.92rem;
+      line-height: 1.2;
     }
 
-    .lang-links a:hover {
-      transform: translateY(-1px);
-      background: rgba(21, 101, 192, 0.12);
+    .lang-link:hover,
+    .lang-link.active {
+      color: var(--ink);
+      border-bottom-color: currentColor;
+    }
+
+    .stack {
+      display: grid;
+      gap: 0.55rem;
+      margin-top: 0.55rem;
+    }
+
+    .notice {
+      padding: 0.65rem 0.8rem;
+      border-left: 2px solid;
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+
+    .notice.error {
+      border-color: var(--danger-line);
+      background: var(--danger-bg);
+    }
+
+    .notice.success {
+      border-color: var(--success-line);
+      background: var(--success-bg);
     }
 
     form {
       display: grid;
-      gap: 16px;
+      gap: 0;
+      margin-top: 0.55rem;
     }
 
-    label {
+    .field {
       display: grid;
-      gap: 8px;
-      font-size: 14px;
+      gap: 0.45rem;
+      padding: 0.95rem 0 0.9rem;
+      border-top: 1px solid var(--rule);
+    }
+
+    .field > span {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--muted);
-      font-weight: 600;
     }
 
     input[type="password"] {
       width: 100%;
-      padding: 14px 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(20, 33, 61, 0.14);
-      background: rgba(255, 255, 255, 0.92);
-      font-size: 16px;
-      color: var(--text);
+      padding: 0 0 0.55rem;
+      border: 0;
+      border-bottom: 1px solid var(--rule-strong);
+      background: transparent;
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-size: 1.08rem;
       outline: none;
+      border-radius: 0;
+    }
+
+    input[type="password"]::placeholder {
+      color: var(--muted);
     }
 
     input[type="password"]:focus {
-      border-color: rgba(21, 101, 192, 0.5);
-      box-shadow: 0 0 0 4px rgba(21, 101, 192, 0.12);
+      border-bottom-color: var(--accent);
     }
 
     .pow-box {
       display: grid;
-      gap: 10px;
-      padding: 14px 16px;
-      border-radius: 16px;
-      border: 1px solid rgba(21, 101, 192, 0.14);
-      background: rgba(21, 101, 192, 0.05);
+      gap: 0.55rem;
+      padding: 0.95rem 0 0.9rem;
+      border-top: 1px solid var(--rule);
     }
 
     .pow-status {
-      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 1rem;
+      font-size: 0.85rem;
       line-height: 1.5;
-      color: var(--accent);
+      color: var(--muted);
+    }
+
+    .pow-status::before {
+      content: "";
+      width: 0.38rem;
+      height: 0.38rem;
+      border-radius: 0;
+      background: var(--accent-2);
+      flex: none;
+    }
+
+    .pow-status[data-state="running"],
+    .pow-status[data-state="ready"] {
+      color: var(--ink);
+    }
+
+    .pow-status[data-state="ready"]::before {
+      background: var(--accent);
+    }
+
+    .pow-status[data-state="failed"],
+    .pow-status[data-state="unsupported"] {
+      color: var(--accent-2);
+    }
+
+    .pow-status[data-state="failed"]::before,
+    .pow-status[data-state="unsupported"]::before {
+      background: var(--accent-2);
     }
 
     .pow-progress {
       display: grid;
-      gap: 10px;
-      margin-top: 2px;
+      gap: 0.35rem;
     }
 
     .pow-progress-track {
       width: 100%;
-      height: 10px;
+      height: 2px;
       overflow: hidden;
-      border-radius: 999px;
-      background: rgba(21, 101, 192, 0.12);
-      box-shadow: inset 0 0 0 1px rgba(21, 101, 192, 0.08);
+      background: rgba(49, 95, 109, 0.16);
     }
 
     .pow-progress-fill {
       width: 0%;
       height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, rgba(21, 101, 192, 0.95), rgba(31, 138, 112, 0.92));
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
       transition: width 0.18s ease;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: flex-start;
+      padding-top: 0.95rem;
+      border-top: 1px solid var(--rule);
     }
 
     button {
       appearance: none;
-      border: 0;
-      border-radius: 16px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      color: #fff;
-      padding: 14px 18px;
-      font-size: 16px;
+      min-width: 8.8rem;
+      padding: 0.7rem 1rem;
+      border: 1px solid var(--rule-strong);
+      border-radius: 0;
+      background: var(--button-bg);
+      color: var(--ink);
+      font-family: var(--font-body);
+      font-size: 0.88rem;
       font-weight: 700;
+      letter-spacing: 0.02em;
       cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      box-shadow: 0 14px 32px rgba(21, 101, 192, 0.22);
+      transition: background 0.14s ease, border-color 0.14s ease;
     }
 
     button:disabled {
       cursor: wait;
       opacity: 0.72;
-      transform: none;
-      box-shadow: none;
     }
 
     button:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 18px 36px rgba(21, 101, 192, 0.24);
+      background: var(--button-bg-hover);
+      border-color: var(--rule-strong);
     }
 
-    .notice {
-      padding: 12px 14px;
-      border-radius: 14px;
-      font-size: 14px;
-      line-height: 1.5;
+    @media (max-width: 720px) {
+      .masthead {
+        grid-template-columns: 1fr;
+        align-items: start;
+      }
+
+      .lang-switch {
+        justify-content: flex-start;
+      }
     }
 
-    .notice.error {
-      background: rgba(180, 35, 24, 0.08);
-      color: var(--danger);
-      border: 1px solid rgba(180, 35, 24, 0.15);
-    }
+    @media (max-width: 520px) {
+      body {
+        padding: 1rem 0.9rem;
+      }
 
-    .notice.success {
-      background: rgba(6, 118, 71, 0.08);
-      color: var(--success);
-      border: 1px solid rgba(6, 118, 71, 0.14);
-    }
+      .actions {
+        display: block;
+      }
 
-    @media (max-width: 540px) {
-      body { padding: 16px; }
-      .hero, .content { padding-left: 20px; padding-right: 20px; }
-      h1 { font-size: 26px; }
-      .lang-switch { align-items: flex-start; }
+      button {
+        width: 100%;
+      }
     }
   </style>
 </head>
 <body>
-  <main class="card">
-    <section class="hero">
-      <h1>{{.Title}}</h1>
-      {{if .Tagline}}
-      <p class="subtitle">{{.Tagline}}</p>
-      {{end}}
-    </section>
-    <section class="content">
+  <main class="shell">
+    <header class="masthead">
+      <div class="title-wrap">
+        <h1>{{.Title}}</h1>
+        {{if .Tagline}}
+        <p class="subtitle">{{.Tagline}}</p>
+        {{end}}
+      </div>
       <div class="lang-switch">
-        <span>{{.LanguageLabel}}</span>
+        <span class="lang-label">{{.LanguageLabel}}</span>
         <div class="lang-links">
-          <a href="{{.ZHToggleURL}}">{{.ZHToggleLabel}}</a>
-          <a href="{{.ENToggleURL}}">{{.ENToggleLabel}}</a>
+          <a class="lang-link{{if eq .Lang "zh"}} active{{end}}" href="{{.ZHToggleURL}}"{{if eq .Lang "zh"}} aria-current="page"{{end}}>{{.ZHToggleLabel}}</a>
+          <a class="lang-link{{if eq .Lang "en"}} active{{end}}" href="{{.ENToggleURL}}"{{if eq .Lang "en"}} aria-current="page"{{end}}>{{.ENToggleLabel}}</a>
         </div>
       </div>
+    </header>
 
+    <div class="stack">
       {{if .Error}}
       <div class="notice error">{{.Error}}</div>
       {{end}}
@@ -271,20 +405,22 @@ const loginPageHTML = `<!doctype html>
       {{if .Message}}
       <div class="notice success">{{.Message}}</div>
       {{end}}
+    </div>
 
-      <form method="post" action="{{.FormAction}}">
-        <input type="hidden" name="next" value="{{.Next}}">
-        <input type="hidden" name="lang" value="{{.Lang}}">
-        <label>
-          <span>{{.PasswordLabel}}</span>
-          <input type="password" name="password" autocomplete="current-password" placeholder="{{.PasswordHint}}" required>
-        </label>
-        {{range .ChallengeHTML}}
-        {{.}}
-        {{end}}
+    <form method="post" action="{{.FormAction}}">
+      <input type="hidden" name="next" value="{{.Next}}">
+      <input type="hidden" name="lang" value="{{.Lang}}">
+      <label class="field">
+        <span>{{.PasswordLabel}}</span>
+        <input type="password" name="password" autocomplete="current-password" placeholder="{{.PasswordHint}}" required>
+      </label>
+      {{range .ChallengeHTML}}
+      {{.}}
+      {{end}}
+      <div class="actions">
         <button type="submit">{{.SubmitLabel}}</button>
-      </form>
-    </section>
+      </div>
+    </form>
   </main>
 </body>
 </html>`

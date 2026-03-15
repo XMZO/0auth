@@ -77,16 +77,13 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
         progressContainer.hidden = true;
       }
     }
-    statusNode.textContent = "%s";
-    updateProgress(0, 0, false);
-
-    function formatSeconds(seconds) {
-      if (seconds < 10) return seconds.toFixed(1) + "s";
-      if (seconds < 60) return seconds.toFixed(0) + "s";
-      const minutes = Math.floor(seconds / 60);
-      const remain = Math.floor(seconds %% 60);
-      return minutes + "m " + String(remain).padStart(2, "0") + "s";
+    function setStatus(message, state) {
+      statusNode.textContent = message;
+      statusNode.dataset.state = state;
     }
+
+    setStatus("%s", "waiting");
+    updateProgress(0, 0, false);
 
     function estimatedProgressPercent(attempts) {
       if (difficulty <= 0) return 100;
@@ -142,7 +139,7 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
     }
 
     async function solve() {
-      statusNode.textContent = "%s";
+      setStatus("%s", "running");
       let nonce = 0;
       const startedAt = performance.now();
       while (true) {
@@ -152,7 +149,7 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
             nonceInput.value = String(nonce);
             submitButton.disabled = false;
             updateProgress(nonce + 1, (performance.now() - startedAt) / 1000, true);
-            statusNode.textContent = "%s";
+            setStatus("%s", "ready");
             return;
           }
         }
@@ -164,17 +161,17 @@ func (g *powLoginGuard) Render(w http.ResponseWriter, r *http.Request, lang stri
     form.addEventListener("submit", (event) => {
       if (!nonceInput.value) {
         event.preventDefault();
-        statusNode.textContent = "%s";
+        setStatus("%s", "waiting");
       }
     });
 
     if (!window.crypto || !window.crypto.subtle || !window.TextEncoder) {
-      statusNode.textContent = "%s";
+      setStatus("%s", "unsupported");
       return;
     }
 
     solve().catch(() => {
-      statusNode.textContent = "%s";
+      setStatus("%s", "failed");
     });
   }
 
