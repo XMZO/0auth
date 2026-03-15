@@ -12,6 +12,7 @@ const (
 	DefaultLangCookie           = "rp_lang"
 	defaultAuthSessionStore     = "memory"
 	defaultAuthSessionFile      = "/var/lib/0auth/auth-sessions.json"
+	defaultAuthSessionCleanup   = 5 * time.Minute
 	defaultAuthRotationInterval = 5 * time.Minute
 	defaultAuthRotationGrace    = 30 * time.Second
 	defaultCookieTTL            = 30 * 24 * time.Hour

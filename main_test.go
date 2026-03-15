@@ -6,6 +6,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -100,8 +101,8 @@ func TestLoginAndProxyFlow(t *testing.T) {
 	if surrogate := unauthResp.Header.Get("Surrogate-Control"); !strings.Contains(strings.ToLower(surrogate), "no-store") {
 		t.Fatalf("challenge page Surrogate-Control = %q, want no-store", surrogate)
 	}
-	if !strings.Contains(string(unauthBody), "Continue") {
-		t.Fatalf("unauthorized body did not render login page: %s", string(unauthBody))
+	if !strings.Contains(string(unauthBody), `input type="password" name="password"`) {
+		t.Fatalf("unauthorized body did not render login form: %s", string(unauthBody))
 	}
 	hiddenPhrases := []string{
 		"Before sign-in, the browser completes a small SHA-256 proof-of-work task.",
@@ -725,6 +726,174 @@ func TestFileAuthSessionStorePersistsAcrossRestartAndLogoutRevokes(t *testing.T)
 
 	if blockedResp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("post-logout status = %d, want %d", blockedResp.StatusCode, http.StatusSeeOther)
+	}
+}
+
+func TestFileAuthSessionStoreCompactsExpiredSessionsOnRestart(t *testing.T) {
+	now := time.Date(2026, 3, 15, 18, 0, 0, 0, time.UTC)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("upstream ok"))
+	}))
+	defer upstream.Close()
+
+	sessionFile := filepath.Join(t.TempDir(), "auth-sessions.json")
+	makeApp := func() *httptest.Server {
+		t.Helper()
+
+		app, err := NewApp(Config{
+			ListenAddr:       ":0",
+			TargetURL:        upstream.URL,
+			AuthPassword:     "secret-pass",
+			SessionSecret:    "session-secret",
+			AuthSessionStore: "file",
+			AuthSessionFile:  sessionFile,
+			CookieTTL:        time.Minute,
+			PoWDifficulty:    0,
+			PoWChallengeTTL:  time.Minute,
+			MaxLoginFailures: 5,
+			LoginBanDuration: 10 * time.Minute,
+			DefaultLang:      "en",
+			AuthCookieName:   defaultAuthCookie,
+			LangCookieName:   defaultLangCookie,
+			CookieSecureMode: "never",
+			Now: func() time.Time {
+				return now
+			},
+		})
+		if err != nil {
+			t.Fatalf("NewApp() error = %v", err)
+		}
+
+		server := httptest.NewServer(app)
+		t.Cleanup(server.Close)
+		return server
+	}
+
+	serverA := makeApp()
+	clientA := newCookieClient(t, serverA)
+
+	loginResp, err := clientA.PostForm(serverA.URL+loginPath, url.Values{
+		"password": {"secret-pass"},
+		"next":     {"/"},
+		"lang":     {"en"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	_, _ = io.ReadAll(loginResp.Body)
+	loginResp.Body.Close()
+
+	initialRaw, err := os.ReadFile(sessionFile)
+	if err != nil {
+		t.Fatalf("os.ReadFile(initial session file) error = %v", err)
+	}
+	if !strings.Contains(string(initialRaw), `"family_id"`) {
+		t.Fatalf("initial session file missing stored family: %s", string(initialRaw))
+	}
+
+	now = now.Add(2 * time.Minute)
+	serverA.Close()
+	_ = makeApp()
+
+	compactedRaw, err := os.ReadFile(sessionFile)
+	if err != nil {
+		t.Fatalf("os.ReadFile(compacted session file) error = %v", err)
+	}
+	if !strings.Contains(string(compactedRaw), `"families":[]`) {
+		t.Fatalf("compacted session file should have no active families: %s", string(compactedRaw))
+	}
+}
+
+func TestFileAuthSessionStoreUsesWALForSubsequentUpdates(t *testing.T) {
+	now := time.Date(2026, 3, 15, 18, 30, 0, 0, time.UTC)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("upstream ok"))
+	}))
+	defer upstream.Close()
+
+	sessionFile := filepath.Join(t.TempDir(), "auth-sessions.json")
+	app, err := NewApp(Config{
+		ListenAddr:           ":0",
+		TargetURL:            upstream.URL,
+		AuthPassword:         "secret-pass",
+		SessionSecret:        "session-secret",
+		AuthSessionStore:     "file",
+		AuthSessionFile:      sessionFile,
+		AuthSessionRotation:  true,
+		AuthRotationInterval: time.Minute,
+		AuthRotationGrace:    30 * time.Second,
+		CookieTTL:            24 * time.Hour,
+		PoWDifficulty:        0,
+		PoWChallengeTTL:      time.Minute,
+		MaxLoginFailures:     5,
+		LoginBanDuration:     10 * time.Minute,
+		DefaultLang:          "en",
+		AuthCookieName:       defaultAuthCookie,
+		LangCookieName:       defaultLangCookie,
+		CookieSecureMode:     "never",
+		Now: func() time.Time {
+			return now
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	server := httptest.NewServer(app)
+	defer server.Close()
+
+	client := newCookieClient(t, server)
+
+	loginResp, err := client.PostForm(server.URL+loginPath, url.Values{
+		"password": {"secret-pass"},
+		"next":     {"/"},
+		"lang":     {"en"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	_, _ = io.ReadAll(loginResp.Body)
+	loginResp.Body.Close()
+
+	initialSnapshot, err := os.ReadFile(sessionFile)
+	if err != nil {
+		t.Fatalf("os.ReadFile(initial snapshot) error = %v", err)
+	}
+	if !strings.Contains(string(initialSnapshot), `"current_generation":1`) {
+		t.Fatalf("initial snapshot missing generation 1 session: %s", string(initialSnapshot))
+	}
+
+	now = now.Add(61 * time.Second)
+
+	rotateResp, err := client.Get(server.URL + "/")
+	if err != nil {
+		t.Fatalf("GET / after rotation interval error = %v", err)
+	}
+	_, _ = io.ReadAll(rotateResp.Body)
+	rotateResp.Body.Close()
+	if rotateResp.StatusCode != http.StatusOK {
+		t.Fatalf("rotated GET status = %d, want %d", rotateResp.StatusCode, http.StatusOK)
+	}
+
+	postRotateSnapshot, err := os.ReadFile(sessionFile)
+	if err != nil {
+		t.Fatalf("os.ReadFile(post-rotate snapshot) error = %v", err)
+	}
+	if string(postRotateSnapshot) != string(initialSnapshot) {
+		t.Fatalf("snapshot file was unexpectedly rewritten on rotation:\ninitial=%s\npost=%s", string(initialSnapshot), string(postRotateSnapshot))
+	}
+
+	walRaw, err := os.ReadFile(sessionFile + ".wal")
+	if err != nil {
+		t.Fatalf("os.ReadFile(session wal) error = %v", err)
+	}
+	if !strings.Contains(string(walRaw), `"op":"upsert"`) {
+		t.Fatalf("session wal missing upsert mutation: %s", string(walRaw))
+	}
+	if !strings.Contains(string(walRaw), `"current_generation":2`) {
+		t.Fatalf("session wal missing rotated generation: %s", string(walRaw))
 	}
 }
 

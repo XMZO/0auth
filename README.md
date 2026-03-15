@@ -34,6 +34,14 @@ docker compose up -d
 ./data/auth-sessions.json
 ```
 
+运行中同目录下可能还会出现：
+
+```text
+./data/auth-sessions.json.wal
+```
+
+这是增量更新用的 sidecar 文件，后续会自动压缩回主文件。
+
 ## 端口说明
 
 如果你的原项目已经占用：
