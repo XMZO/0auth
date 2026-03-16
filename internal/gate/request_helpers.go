@@ -39,6 +39,21 @@ func requestedPath(r *http.Request) string {
 	return sanitizeNext(r.URL.RequestURI())
 }
 
+func setNoStoreHeaders(w http.ResponseWriter) {
+	if w == nil {
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Header().Set("Surrogate-Control", "no-store")
+}
+
+func redirectNoStore(w http.ResponseWriter, r *http.Request, location string, status int) {
+	setNoStoreHeaders(w)
+	http.Redirect(w, r, location, status)
+}
+
 func sanitizeNext(next string) string {
 	next = strings.TrimSpace(next)
 	if next == "" {

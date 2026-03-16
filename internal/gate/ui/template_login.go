@@ -39,6 +39,7 @@ const loginPageHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2315110d'/%3E%3Crect x='3' y='3' width='10' height='10' fill='%23d8cdbb'/%3E%3C/svg%3E">
   <style>
     :root {
       color-scheme: light dark;

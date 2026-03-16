@@ -1051,6 +1051,12 @@ func TestUnauthenticatedRedirectUsesChallengeURL(t *testing.T) {
 	if flowCookie.Path != loginPath {
 		t.Fatalf("login flow cookie path = %q, want %q", flowCookie.Path, loginPath)
 	}
+	if cacheControl := resp.Header.Get("Cache-Control"); !strings.Contains(cacheControl, "no-store") {
+		t.Fatalf("redirect Cache-Control = %q, want no-store", cacheControl)
+	}
+	if pragma := resp.Header.Get("Pragma"); !strings.Contains(strings.ToLower(pragma), "no-cache") {
+		t.Fatalf("redirect Pragma = %q, want no-cache", pragma)
+	}
 }
 
 func TestLoginPageMigratesLegacyQueryToCleanURL(t *testing.T) {
@@ -1165,7 +1171,7 @@ func TestLoginSuccessUsesStoredNextFromFlow(t *testing.T) {
 
 	loginResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
 		"password": {"secret-pass"},
-		"next":     {"/"},
+		"next":     {"/admin?tab=metrics"},
 		"lang":     {"en"},
 	})
 	if err != nil {
@@ -1182,6 +1188,124 @@ func TestLoginSuccessUsesStoredNextFromFlow(t *testing.T) {
 	}
 	if strings.TrimSpace(string(loginBody)) != "/admin?tab=metrics" {
 		t.Fatalf("login redirected to %q, want %q", strings.TrimSpace(string(loginBody)), "/admin?tab=metrics")
+	}
+}
+
+func TestLoginPageEmbedsFaviconGuard(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.URL.RequestURI()))
+	}))
+	defer upstream.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:       ":0",
+		TargetURL:        upstream.URL,
+		AuthPassword:     "secret-pass",
+		SessionSecret:    "session-secret",
+		CookieTTL:        24 * time.Hour,
+		PoWDifficulty:    0,
+		PoWChallengeTTL:  time.Minute,
+		MaxLoginFailures: 5,
+		LoginBanDuration: 10 * time.Minute,
+		DefaultLang:      "en",
+		AuthCookieName:   defaultAuthCookie,
+		LangCookieName:   defaultLangCookie,
+		CookieSecureMode: "never",
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+
+	firstResp, err := client.Get(proxy.URL + "/admin?tab=metrics")
+	if err != nil {
+		t.Fatalf("GET protected path error = %v", err)
+	}
+	firstBody, err := io.ReadAll(firstResp.Body)
+	firstResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(first login page) error = %v", err)
+	}
+	if !strings.Contains(string(firstBody), `name="next" value="/admin?tab=metrics"`) {
+		t.Fatalf("first login page missing original next target: %s", firstBody)
+	}
+	if !strings.Contains(string(firstBody), `<link rel="icon" href="data:image/svg+xml,`) {
+		t.Fatalf("login page missing embedded favicon guard: %s", firstBody)
+	}
+}
+
+func TestLoginSuccessPrefersPostedNextOverFlowCookie(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.URL.RequestURI()))
+	}))
+	defer upstream.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:       ":0",
+		TargetURL:        upstream.URL,
+		AuthPassword:     "secret-pass",
+		SessionSecret:    "session-secret",
+		CookieTTL:        24 * time.Hour,
+		PoWDifficulty:    0,
+		PoWChallengeTTL:  time.Minute,
+		MaxLoginFailures: 5,
+		LoginBanDuration: 10 * time.Minute,
+		DefaultLang:      "en",
+		AuthCookieName:   defaultAuthCookie,
+		LangCookieName:   defaultLangCookie,
+		CookieSecureMode: "never",
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+
+	getResp, err := client.Get(proxy.URL + "/reports?view=private")
+	if err != nil {
+		t.Fatalf("GET protected path error = %v", err)
+	}
+	getBody, err := io.ReadAll(getResp.Body)
+	getResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(initial login page) error = %v", err)
+	}
+	if !strings.Contains(string(getBody), `name="next" value="/reports?view=private"`) {
+		t.Fatalf("initial login page missing expected next target: %s", getBody)
+	}
+
+	mutateResp, err := client.Get(proxy.URL + loginPath + "?next=%2Ffavicon.ico&lang=en")
+	if err != nil {
+		t.Fatalf("GET legacy login mutator error = %v", err)
+	}
+	_, _ = io.ReadAll(mutateResp.Body)
+	mutateResp.Body.Close()
+
+	loginResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password": {"secret-pass"},
+		"next":     {"/reports?view=private"},
+		"lang":     {"en"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	loginBody, err := io.ReadAll(loginResp.Body)
+	loginResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(login) error = %v", err)
+	}
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("login final status = %d, want %d", loginResp.StatusCode, http.StatusOK)
+	}
+	if strings.TrimSpace(string(loginBody)) != "/reports?view=private" {
+		t.Fatalf("login redirected to %q, want %q", strings.TrimSpace(string(loginBody)), "/reports?view=private")
 	}
 }
 

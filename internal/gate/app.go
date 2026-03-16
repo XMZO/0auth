@@ -186,7 +186,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if queryState, hasQuery := loginFlowStateFromQuery(r, flowState, detectedLang); hasQuery {
 			if a.auth.Authenticate(w, r) {
 				a.loginFlow.Clear(w, r)
-				http.Redirect(w, r, queryState.Next, http.StatusSeeOther)
+				redirectNoStore(w, r, queryState.Next, http.StatusSeeOther)
 				return
 			}
 			if lang := normalizeLang(r.URL.Query().Get("lang")); lang != "" {
@@ -197,17 +197,17 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 				a.renderLoginPage(w, r, queryState, http.StatusUnauthorized, "", "")
 				return
 			}
-			http.Redirect(w, r, loginPath, http.StatusSeeOther)
+			redirectNoStore(w, r, loginPath, http.StatusSeeOther)
 			return
 		}
 
 		if a.auth.Authenticate(w, r) {
 			a.loginFlow.Clear(w, r)
 			if hasFlow {
-				http.Redirect(w, r, flowState.Next, http.StatusSeeOther)
+				redirectNoStore(w, r, flowState.Next, http.StatusSeeOther)
 				return
 			}
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+			redirectNoStore(w, r, "/", http.StatusSeeOther)
 			return
 		}
 
@@ -234,6 +234,9 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if !hasFlow {
 			state = loginFlowFallbackStateFromForm(r, detectedLang)
 		}
+		if _, ok := r.Form["next"]; ok {
+			state.Next = sanitizeNext(r.FormValue("next"))
+		}
 		if lang := normalizeLang(r.FormValue("lang")); lang != "" {
 			state.Lang = lang
 		}
@@ -246,7 +249,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 				a.renderLoginPage(w, r, state, http.StatusUnauthorized, "", "")
 				return
 			}
-			http.Redirect(w, r, loginPath, http.StatusSeeOther)
+			redirectNoStore(w, r, loginPath, http.StatusSeeOther)
 			return
 		}
 
@@ -278,7 +281,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 		a.notifyLoginSuccess(r)
 		a.loginFlow.Clear(w, r)
-		http.Redirect(w, r, state.Next, http.StatusSeeOther)
+		redirectNoStore(w, r, state.Next, http.StatusSeeOther)
 		return
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -319,10 +322,7 @@ func (a *App) renderLoginPage(w http.ResponseWriter, r *http.Request, state logi
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Expires", "0")
-	w.Header().Set("Surrogate-Control", "no-store")
+	setNoStoreHeaders(w)
 	w.Header().Set("Vary", "Accept-Language, Cookie")
 
 	challengeHTML := make([]template.HTML, 0, len(a.loginGuards))
@@ -400,7 +400,7 @@ func (a *App) redirectToLogin(w http.ResponseWriter, r *http.Request, next strin
 	if _, err := a.loginFlow.Issue(w, r, state, lang); err != nil {
 		log.Printf("issue login flow during redirect: %v", err)
 	}
-	http.Redirect(w, r, loginPath, status)
+	redirectNoStore(w, r, loginPath, status)
 }
 
 func (a *App) detectLanguage(r *http.Request) string {
