@@ -1524,8 +1524,78 @@ func TestProtectedEdgeCacheRedirectsAuthedAssetToSignedURL(t *testing.T) {
 	if signedResp.StatusCode != http.StatusOK {
 		t.Fatalf("signed asset status = %d, want %d", signedResp.StatusCode, http.StatusOK)
 	}
+	if got := signedResp.Header.Get("Cloudflare-CDN-Cache-Control"); !strings.Contains(got, "max-age=600") {
+		t.Fatalf("signed asset Cloudflare-CDN-Cache-Control = %q, want max-age=600", got)
+	}
+	if got := signedResp.Header.Get("CDN-Cache-Control"); !strings.Contains(got, "max-age=600") {
+		t.Fatalf("signed asset CDN-Cache-Control = %q, want max-age=600", got)
+	}
 	if strings.TrimSpace(string(signedBody)) != "/buckets/oplist/sample.mp4" {
 		t.Fatalf("signed asset upstream URI = %q, want clean path", strings.TrimSpace(string(signedBody)))
+	}
+}
+
+func TestAuthenticatedProxyResponseDefaultsToPrivateNoStore(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Header().Set("CDN-Cache-Control", "public, max-age=86400")
+		w.Header().Set("Cloudflare-CDN-Cache-Control", "public, max-age=86400")
+		_, _ = w.Write([]byte("video"))
+	}))
+	defer upstream.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:         ":0",
+		TargetURL:          upstream.URL,
+		AuthPassword:       "secret-pass",
+		SessionSecret:      "session-secret",
+		CookieTTL:          24 * time.Hour,
+		ProtectedCacheMode: "off",
+		PoWDifficulty:      0,
+		PoWChallengeTTL:    time.Minute,
+		MaxLoginFailures:   5,
+		LoginBanDuration:   10 * time.Minute,
+		DefaultLang:        "en",
+		AuthCookieName:     defaultAuthCookie,
+		LangCookieName:     defaultLangCookie,
+		CookieSecureMode:   "never",
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+
+	loginResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password": {"secret-pass"},
+		"next":     {"/"},
+		"lang":     {"en"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	loginResp.Body.Close()
+
+	resp, err := client.Get(proxy.URL + "/video/sample.mp4")
+	if err != nil {
+		t.Fatalf("GET authed asset error = %v", err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("authed asset status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := resp.Header.Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("authed asset Cache-Control = %q, want no-store", got)
+	}
+	if got := resp.Header.Get("Cloudflare-CDN-Cache-Control"); got != "" {
+		t.Fatalf("authed asset Cloudflare-CDN-Cache-Control = %q, want empty", got)
+	}
+	if got := resp.Header.Get("CDN-Cache-Control"); got != "" {
+		t.Fatalf("authed asset CDN-Cache-Control = %q, want empty", got)
 	}
 }
 

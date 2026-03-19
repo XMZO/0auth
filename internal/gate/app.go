@@ -137,6 +137,7 @@ func NewApp(cfg Config) (*App, error) {
 		langDetectors:  buildLanguageDetectors(cfg),
 		loginGuards:    buildLoginGuards(cfg, signer, translator),
 	}
+	proxy.ModifyResponse = applyProxyResponsePolicy
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		if errors.Is(err, http.ErrAbortHandler) {
@@ -183,7 +184,10 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if a.protectedCache != nil {
 		if proxied := a.protectedCache.ProxiedRequest(r); proxied != nil {
-			a.proxy.ServeHTTP(w, proxied)
+			a.proxy.ServeHTTP(w, proxied.WithContext(withProxyResponsePolicy(proxied.Context(), proxyResponsePolicy{
+				cacheMode:      proxyResponseCacheModeSignedEdgeCache,
+				sharedCacheTTL: a.protectedCache.ttl,
+			})))
 			return
 		}
 	}
@@ -200,7 +204,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	a.proxy.ServeHTTP(w, r)
+	a.proxy.ServeHTTP(w, r.WithContext(withProxyResponsePolicy(r.Context(), proxyResponsePolicy{
+		cacheMode: proxyResponseCacheModePrivateNoStore,
+	})))
 }
 
 func (a *App) handleHealth(w http.ResponseWriter) {

@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"context"
 	"html/template"
 	"net"
 	"net/http"
@@ -240,6 +241,32 @@ type protectedAssetCache struct {
 	extensions map[string]struct{}
 	signer     *SessionSigner
 	now        func() time.Time
+}
+
+type proxyResponseCacheMode int
+
+const (
+	proxyResponseCacheModePrivateNoStore proxyResponseCacheMode = iota
+	proxyResponseCacheModeSignedEdgeCache
+)
+
+type proxyResponsePolicy struct {
+	cacheMode      proxyResponseCacheMode
+	sharedCacheTTL time.Duration
+}
+
+type proxyResponsePolicyContextKey struct{}
+
+func withProxyResponsePolicy(ctx context.Context, policy proxyResponsePolicy) context.Context {
+	return context.WithValue(ctx, proxyResponsePolicyContextKey{}, policy)
+}
+
+func proxyResponsePolicyFromContext(ctx context.Context) (proxyResponsePolicy, bool) {
+	if ctx == nil {
+		return proxyResponsePolicy{}, false
+	}
+	policy, ok := ctx.Value(proxyResponsePolicyContextKey{}).(proxyResponsePolicy)
+	return policy, ok
 }
 
 type LoginLanguageOption struct {
