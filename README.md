@@ -82,6 +82,16 @@ ghcr.io/xmzo/0auth:latest
 
 常用配置都在 `.env.example`。
 
+如果你前面挂了 Cloudflare 一类边缘缓存，又不想让受保护资源被“缓存穿透”成公开直链，可开启：
+
+```env
+PROTECTED_EDGE_CACHE_MODE=signed-url
+PROTECTED_EDGE_CACHE_TTL=10m
+```
+
+开启后，资源类请求会先跳到短期签名 URL，再由 CDN 缓存签名 URL；原始干净 URL 仍然必须先过本项目的鉴权。
+这是“只改本项目、还要共享 CDN 缓存”下的折中方案：签名 URL 在有效期内如果被完整复制，仍可被复用。
+
 如果要启用 Turnstile，至少再补这几项：
 
 ```env

@@ -18,6 +18,9 @@ const (
 	defaultCookieTTL            = 30 * 24 * time.Hour
 	defaultLoginFlowTTL         = 24 * time.Hour
 	defaultLoginChallengeMode   = "pow"
+	defaultProtectedCacheMode   = "off"
+	defaultProtectedCacheTTL    = 10 * time.Minute
+	defaultProtectedCacheParam  = "__oa"
 	defaultPoWDifficulty        = 4
 	defaultPoWTTL               = 5 * time.Minute
 	defaultTurnstileTheme       = "auto"

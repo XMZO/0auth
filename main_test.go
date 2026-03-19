@@ -1442,6 +1442,304 @@ func TestDirectLoginPostStillWorksWithoutFlowCookie(t *testing.T) {
 	}
 }
 
+func TestProtectedEdgeCacheRedirectsAuthedAssetToSignedURL(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.URL.RequestURI()))
+	}))
+	defer upstream.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:          ":0",
+		TargetURL:           upstream.URL,
+		AuthPassword:        "secret-pass",
+		SessionSecret:       "session-secret",
+		CookieTTL:           24 * time.Hour,
+		ProtectedCacheMode:  "signed-url",
+		ProtectedCacheTTL:   10 * time.Minute,
+		ProtectedCacheParam: "__oa",
+		ProtectedCacheExts:  []string{".mp4"},
+		PoWDifficulty:       0,
+		PoWChallengeTTL:     time.Minute,
+		MaxLoginFailures:    5,
+		LoginBanDuration:    10 * time.Minute,
+		DefaultLang:         "en",
+		AuthCookieName:      defaultAuthCookie,
+		LangCookieName:      defaultLangCookie,
+		CookieSecureMode:    "never",
+		Now:                 func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	loginResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password": {"secret-pass"},
+		"next":     {"/"},
+		"lang":     {"en"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	loginResp.Body.Close()
+
+	assetResp, err := client.Get(proxy.URL + "/buckets/oplist/sample.mp4")
+	if err != nil {
+		t.Fatalf("GET protected asset error = %v", err)
+	}
+	defer assetResp.Body.Close()
+
+	if assetResp.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("asset redirect status = %d, want %d", assetResp.StatusCode, http.StatusTemporaryRedirect)
+	}
+	if cacheControl := assetResp.Header.Get("Cache-Control"); !strings.Contains(cacheControl, "no-store") {
+		t.Fatalf("asset redirect Cache-Control = %q, want no-store", cacheControl)
+	}
+
+	location := assetResp.Header.Get("Location")
+	if location == "" {
+		t.Fatalf("asset redirect missing Location header")
+	}
+	if !strings.Contains(location, "__oa=") {
+		t.Fatalf("asset redirect missing signed query parameter: %q", location)
+	}
+
+	signedResp, err := client.Get(proxy.URL + location)
+	if err != nil {
+		t.Fatalf("GET signed asset error = %v", err)
+	}
+	signedBody, err := io.ReadAll(signedResp.Body)
+	signedResp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(signed asset) error = %v", err)
+	}
+	if signedResp.StatusCode != http.StatusOK {
+		t.Fatalf("signed asset status = %d, want %d", signedResp.StatusCode, http.StatusOK)
+	}
+	if strings.TrimSpace(string(signedBody)) != "/buckets/oplist/sample.mp4" {
+		t.Fatalf("signed asset upstream URI = %q, want clean path", strings.TrimSpace(string(signedBody)))
+	}
+}
+
+func TestProtectedEdgeCacheSignedURLWorksWithoutAuthCookie(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.URL.RequestURI()))
+	}))
+	defer upstream.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:          ":0",
+		TargetURL:           upstream.URL,
+		AuthPassword:        "secret-pass",
+		SessionSecret:       "session-secret",
+		CookieTTL:           24 * time.Hour,
+		ProtectedCacheMode:  "signed-url",
+		ProtectedCacheTTL:   10 * time.Minute,
+		ProtectedCacheParam: "__oa",
+		ProtectedCacheExts:  []string{".mp4"},
+		PoWDifficulty:       0,
+		PoWChallengeTTL:     time.Minute,
+		MaxLoginFailures:    5,
+		LoginBanDuration:    10 * time.Minute,
+		DefaultLang:         "en",
+		AuthCookieName:      defaultAuthCookie,
+		LangCookieName:      defaultLangCookie,
+		CookieSecureMode:    "never",
+		Now:                 func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	loginResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password": {"secret-pass"},
+		"next":     {"/"},
+		"lang":     {"en"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	loginResp.Body.Close()
+
+	assetResp, err := client.Get(proxy.URL + "/buckets/oplist/sample.mp4")
+	if err != nil {
+		t.Fatalf("GET protected asset error = %v", err)
+	}
+	location := assetResp.Header.Get("Location")
+	assetResp.Body.Close()
+	if location == "" {
+		t.Fatalf("asset redirect missing Location header")
+	}
+
+	anonClient := proxy.Client()
+	anonClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	resp, err := anonClient.Get(proxy.URL + location)
+	if err != nil {
+		t.Fatalf("GET signed asset without auth error = %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(signed asset without auth) error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("signed asset without auth status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if strings.TrimSpace(string(body)) != "/buckets/oplist/sample.mp4" {
+		t.Fatalf("signed asset without auth upstream URI = %q, want clean path", strings.TrimSpace(string(body)))
+	}
+}
+
+func TestProtectedEdgeCacheExpiredURLRefreshesForAuthedClient(t *testing.T) {
+	current := time.Unix(1_700_000_000, 0)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.URL.RequestURI()))
+	}))
+	defer upstream.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:          ":0",
+		TargetURL:           upstream.URL,
+		AuthPassword:        "secret-pass",
+		SessionSecret:       "session-secret",
+		CookieTTL:           24 * time.Hour,
+		ProtectedCacheMode:  "signed-url",
+		ProtectedCacheTTL:   10 * time.Minute,
+		ProtectedCacheParam: "__oa",
+		ProtectedCacheExts:  []string{".mp4"},
+		PoWDifficulty:       0,
+		PoWChallengeTTL:     time.Minute,
+		MaxLoginFailures:    5,
+		LoginBanDuration:    10 * time.Minute,
+		DefaultLang:         "en",
+		AuthCookieName:      defaultAuthCookie,
+		LangCookieName:      defaultLangCookie,
+		CookieSecureMode:    "never",
+		Now:                 func() time.Time { return current },
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	loginResp, err := client.PostForm(proxy.URL+loginPath, url.Values{
+		"password": {"secret-pass"},
+		"next":     {"/"},
+		"lang":     {"en"},
+	})
+	if err != nil {
+		t.Fatalf("POST login error = %v", err)
+	}
+	loginResp.Body.Close()
+
+	firstResp, err := client.Get(proxy.URL + "/buckets/oplist/sample.mp4")
+	if err != nil {
+		t.Fatalf("GET first protected asset error = %v", err)
+	}
+	firstLocation := firstResp.Header.Get("Location")
+	firstResp.Body.Close()
+	if firstLocation == "" {
+		t.Fatalf("first asset redirect missing Location header")
+	}
+
+	current = current.Add(11 * time.Minute)
+
+	expiredResp, err := client.Get(proxy.URL + firstLocation)
+	if err != nil {
+		t.Fatalf("GET expired signed asset error = %v", err)
+	}
+	defer expiredResp.Body.Close()
+
+	if expiredResp.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("expired signed asset status = %d, want %d", expiredResp.StatusCode, http.StatusTemporaryRedirect)
+	}
+	secondLocation := expiredResp.Header.Get("Location")
+	if secondLocation == "" {
+		t.Fatalf("expired signed asset refresh missing Location header")
+	}
+	if secondLocation == firstLocation {
+		t.Fatalf("expired signed asset should refresh token, got same location %q", secondLocation)
+	}
+}
+
+func TestProtectedEdgeCacheInvalidSignedURLRedirectsToLoginWithCleanNext(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("upstream ok"))
+	}))
+	defer upstream.Close()
+
+	app, err := NewApp(Config{
+		ListenAddr:          ":0",
+		TargetURL:           upstream.URL,
+		AuthPassword:        "secret-pass",
+		SessionSecret:       "session-secret",
+		CookieTTL:           24 * time.Hour,
+		ProtectedCacheMode:  "signed-url",
+		ProtectedCacheTTL:   10 * time.Minute,
+		ProtectedCacheParam: "__oa",
+		ProtectedCacheExts:  []string{".mp4"},
+		PoWDifficulty:       0,
+		PoWChallengeTTL:     time.Minute,
+		MaxLoginFailures:    5,
+		LoginBanDuration:    10 * time.Minute,
+		DefaultLang:         "en",
+		AuthCookieName:      defaultAuthCookie,
+		LangCookieName:      defaultLangCookie,
+		CookieSecureMode:    "never",
+	})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+
+	proxy := httptest.NewServer(app)
+	defer proxy.Close()
+
+	client := newCookieClient(t, proxy)
+
+	resp, err := client.Get(proxy.URL + "/buckets/oplist/sample.mp4?__oa=badtoken")
+	if err != nil {
+		t.Fatalf("GET invalid signed asset error = %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(invalid signed asset login page) error = %v", err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("invalid signed asset final status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	if !strings.Contains(string(body), `name="next" value="/buckets/oplist/sample.mp4"`) {
+		t.Fatalf("invalid signed asset login next leaked token: %s", body)
+	}
+}
+
 func TestPasswordAttemptLimitGuard(t *testing.T) {
 	now := time.Date(2026, 3, 15, 16, 0, 0, 0, time.UTC)
 

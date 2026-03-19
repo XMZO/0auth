@@ -29,6 +29,14 @@ func LoadConfigFromEnv() (Config, error) {
 	if loginChallengeMode == "" {
 		return Config{}, fmt.Errorf("parse LOGIN_CHALLENGE_MODE: unsupported mode %q", os.Getenv("LOGIN_CHALLENGE_MODE"))
 	}
+	protectedCacheMode := normalizeProtectedCacheMode(envOrDefault("PROTECTED_EDGE_CACHE_MODE", defaultProtectedCacheMode))
+	if protectedCacheMode == "" {
+		return Config{}, fmt.Errorf("parse PROTECTED_EDGE_CACHE_MODE: unsupported mode %q", os.Getenv("PROTECTED_EDGE_CACHE_MODE"))
+	}
+	protectedCacheTTL, err := parseDurationWithDays(envOrDefault("PROTECTED_EDGE_CACHE_TTL", defaultProtectedCacheTTL.String()))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse PROTECTED_EDGE_CACHE_TTL: %w", err)
+	}
 	powChallengeTTL, err := parseDurationWithDays(envOrDefault("POW_CHALLENGE_TTL", defaultPoWTTL.String()))
 	if err != nil {
 		return Config{}, fmt.Errorf("parse POW_CHALLENGE_TTL: %w", err)
@@ -54,6 +62,10 @@ func LoadConfigFromEnv() (Config, error) {
 	turnstileAppearance := normalizeTurnstileAppearance(envOrDefault("TURNSTILE_APPEARANCE", defaultTurnstileAppearance))
 	if turnstileAppearance == "" {
 		return Config{}, fmt.Errorf("parse TURNSTILE_APPEARANCE: unsupported appearance %q", os.Getenv("TURNSTILE_APPEARANCE"))
+	}
+	protectedCacheParam := normalizeQueryParamName(envOrDefault("PROTECTED_EDGE_CACHE_PARAM", defaultProtectedCacheParam), defaultProtectedCacheParam)
+	if protectedCacheParam == "" {
+		return Config{}, fmt.Errorf("parse PROTECTED_EDGE_CACHE_PARAM: unsupported parameter name %q", os.Getenv("PROTECTED_EDGE_CACHE_PARAM"))
 	}
 	authSessionStore := normalizeAuthSessionStore(envOrDefault("AUTH_SESSION_STORE", defaultAuthSessionStore))
 	if authSessionStore == "" {
@@ -105,6 +117,10 @@ func LoadConfigFromEnv() (Config, error) {
 		AuthRotationGrace:      authRotationGrace,
 		CookieTTL:              cookieTTL,
 		LoginChallengeMode:     loginChallengeMode,
+		ProtectedCacheMode:     protectedCacheMode,
+		ProtectedCacheTTL:      protectedCacheTTL,
+		ProtectedCacheParam:    protectedCacheParam,
+		ProtectedCacheExts:     parseProtectedCacheExtensions(os.Getenv("PROTECTED_EDGE_CACHE_EXTENSIONS")),
 		PoWDifficulty:          powDifficulty,
 		PoWAutoDifficulty:      powAutoDifficulty,
 		PoWAutoRules:           powAutoRules,

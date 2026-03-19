@@ -23,6 +23,10 @@ type Config struct {
 	AuthRotationGrace      time.Duration
 	CookieTTL              time.Duration
 	LoginChallengeMode     string
+	ProtectedCacheMode     string
+	ProtectedCacheTTL      time.Duration
+	ProtectedCacheParam    string
+	ProtectedCacheExts     []string
 	PoWDifficulty          int
 	PoWAutoDifficulty      bool
 	PoWAutoRules           []string
@@ -53,13 +57,14 @@ type Config struct {
 }
 
 type App struct {
-	cfg           Config
-	proxy         *httputil.ReverseProxy
-	auth          AuthStrategy
-	loginFlow     *loginFlowManager
-	translator    *gatei18n.Translator
-	langDetectors []LanguageDetector
-	loginGuards   []LoginGuard
+	cfg            Config
+	proxy          *httputil.ReverseProxy
+	auth           AuthStrategy
+	loginFlow      *loginFlowManager
+	protectedCache *protectedAssetCache
+	translator     *gatei18n.Translator
+	langDetectors  []LanguageDetector
+	loginGuards    []LoginGuard
 }
 
 type Module interface {
@@ -226,6 +231,15 @@ type attemptState struct {
 type localizedUserError struct {
 	key    string
 	status int
+}
+
+type protectedAssetCache struct {
+	mode       string
+	ttl        time.Duration
+	paramName  string
+	extensions map[string]struct{}
+	signer     *SessionSigner
+	now        func() time.Time
 }
 
 type LoginLanguageOption struct {

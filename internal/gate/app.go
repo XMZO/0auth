@@ -36,10 +36,14 @@ func NewApp(cfg Config) (*App, error) {
 	if cfg.TurnstileSessionTTL <= 0 {
 		cfg.TurnstileSessionTTL = defaultTurnstileVerifyTTL
 	}
+	if cfg.ProtectedCacheTTL <= 0 {
+		cfg.ProtectedCacheTTL = defaultProtectedCacheTTL
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
 	cfg.LoginChallengeMode = normalizeLoginChallengeMode(cfg.LoginChallengeMode)
+	cfg.ProtectedCacheMode = normalizeProtectedCacheMode(cfg.ProtectedCacheMode)
 	cfg.PoWProgressMode = normalizePoWProgressMode(cfg.PoWProgressMode)
 	cfg.TurnstileTheme = normalizeTurnstileTheme(cfg.TurnstileTheme)
 	cfg.TurnstileAppearance = normalizeTurnstileAppearance(cfg.TurnstileAppearance)
@@ -61,6 +65,13 @@ func NewApp(cfg Config) (*App, error) {
 	}
 	if cfg.PoWProgressMode == "" {
 		return nil, fmt.Errorf("POW_PROGRESS_MODE must be one of estimated, fake, or hidden")
+	}
+	if cfg.ProtectedCacheMode == "" {
+		return nil, fmt.Errorf("PROTECTED_EDGE_CACHE_MODE must be off or signed-url")
+	}
+	cfg.ProtectedCacheParam = normalizeQueryParamName(cfg.ProtectedCacheParam, defaultProtectedCacheParam)
+	if cfg.ProtectedCacheParam == "" {
+		return nil, fmt.Errorf("PROTECTED_EDGE_CACHE_PARAM must use only letters, numbers, hyphens, or underscores")
 	}
 	if cfg.TurnstileTheme == "" {
 		return nil, fmt.Errorf("TURNSTILE_THEME must be one of auto, light, or dark")
@@ -117,13 +128,14 @@ func NewApp(cfg Config) (*App, error) {
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	app := &App{
-		cfg:           cfg,
-		proxy:         proxy,
-		auth:          auth,
-		loginFlow:     newLoginFlowManager(cfg, signer),
-		translator:    translator,
-		langDetectors: buildLanguageDetectors(cfg),
-		loginGuards:   buildLoginGuards(cfg, signer, translator),
+		cfg:            cfg,
+		proxy:          proxy,
+		auth:           auth,
+		loginFlow:      newLoginFlowManager(cfg, signer),
+		protectedCache: newProtectedAssetCache(cfg, signer),
+		translator:     translator,
+		langDetectors:  buildLanguageDetectors(cfg),
+		loginGuards:    buildLoginGuards(cfg, signer, translator),
 	}
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -137,6 +149,11 @@ func NewApp(cfg Config) (*App, error) {
 	log.Printf("enabled language modules: %s", strings.Join(languageDetectorIDs(app.langDetectors), ", "))
 	log.Printf("enabled login modules: %s", strings.Join(loginGuardIDs(app.loginGuards), ", "))
 	log.Printf("auth session store: %s", describeAuthSessionStore(cfg))
+	if app.protectedCache != nil {
+		log.Printf("protected edge cache: %s ttl=%s param=%s", app.protectedCache.mode, app.protectedCache.ttl, app.protectedCache.paramName)
+	} else {
+		log.Printf("protected edge cache: off")
+	}
 	if cfg.AuthSessionRotation {
 		log.Printf("auth session rotation: enabled interval=%s grace=%s", cfg.AuthRotationInterval, cfg.AuthRotationGrace)
 	} else {
@@ -164,9 +181,23 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if a.protectedCache != nil {
+		if proxied := a.protectedCache.ProxiedRequest(r); proxied != nil {
+			a.proxy.ServeHTTP(w, proxied)
+			return
+		}
+	}
+
 	if !a.auth.Authenticate(w, r) {
-		a.redirectToLogin(w, r, requestedPath(r), a.detectLanguage(r), http.StatusSeeOther)
+		a.redirectToLogin(w, r, a.requestedPath(r), a.detectLanguage(r), http.StatusSeeOther)
 		return
+	}
+
+	if a.protectedCache != nil {
+		if location, ok := a.protectedCache.RedirectLocation(r); ok {
+			redirectNoStore(w, r, location, http.StatusTemporaryRedirect)
+			return
+		}
 	}
 
 	a.proxy.ServeHTTP(w, r)
@@ -410,6 +441,13 @@ func (a *App) detectLanguage(r *http.Request) string {
 		}
 	}
 	return a.cfg.DefaultLang
+}
+
+func (a *App) requestedPath(r *http.Request) string {
+	if a != nil && a.protectedCache != nil {
+		return a.protectedCache.CleanRequestURI(r)
+	}
+	return requestedPath(r)
 }
 
 func (a *App) persistLanguageCookie(w http.ResponseWriter, r *http.Request, candidate string) {

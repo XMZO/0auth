@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	gatei18n "auth-proxy/internal/gate/i18n"
@@ -110,6 +111,17 @@ func normalizeLoginChallengeMode(value string) string {
 	}
 }
 
+func normalizeProtectedCacheMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "disabled", "none", "off":
+		return "off"
+	case "signed-url", "signed", "url":
+		return "signed-url"
+	default:
+		return ""
+	}
+}
+
 func challengeModeIncludesPoW(value string) bool {
 	switch normalizeLoginChallengeMode(value) {
 	case "pow", "pow+turnstile":
@@ -195,6 +207,61 @@ func normalizeAuthSessionStore(value string) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeQueryParamName(value string, fallback string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fallback
+	}
+	for _, r := range trimmed {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-', r == '_':
+		default:
+			return ""
+		}
+	}
+	return trimmed
+}
+
+func parseProtectedCacheExtensions(raw string) []string {
+	defaults := []string{
+		".aac", ".avi", ".bmp", ".css", ".eot", ".gif", ".ico", ".jpeg", ".jpg", ".js", ".json", ".map",
+		".m3u8", ".m4a", ".m4s", ".mp3", ".mp4", ".mpeg", ".mjs", ".ogg", ".ogv", ".otf", ".pdf", ".png",
+		".svg", ".ts", ".ttf", ".txt", ".vtt", ".wasm", ".wav", ".webm", ".webmanifest", ".webp", ".woff",
+		".woff2", ".xml", ".zip",
+	}
+	if strings.TrimSpace(raw) == "" {
+		return defaults
+	}
+
+	seen := map[string]struct{}{}
+	out := make([]string, 0)
+	for _, token := range splitCSV(raw) {
+		token = strings.ToLower(strings.TrimSpace(token))
+		if token == "" {
+			continue
+		}
+		if !strings.HasPrefix(token, ".") {
+			token = "." + token
+		}
+		token = filepath.Clean(token)
+		if token == "." || token == string(filepath.Separator) || strings.Contains(token, "/") || strings.Contains(token, "\\") {
+			continue
+		}
+		if _, ok := seen[token]; ok {
+			continue
+		}
+		seen[token] = struct{}{}
+		out = append(out, token)
+	}
+	if len(out) == 0 {
+		return defaults
+	}
+	return out
 }
 
 func NormalizePoWProgressMode(value string) string {
